@@ -27,6 +27,11 @@ TRIMQC=${ROOTDIR}/2_trimmed/FastQC
 mkdir -p ${TRIMFQ}
 mkdir -p ${TRIMQC}
 
+
+## bbduk leaves too many reads with adapter sequences
+## change back to AdapterRemoval
+## After that step use bbduk to remove phiX and length trim
+
 # Remove the adapters and length trim in the same step
 for R1 in $(ls ${DEMUXFQ}/*1.fq.gz)
     do
@@ -39,19 +44,22 @@ for R1 in $(ls ${DEMUXFQ}/*1.fq.gz)
 
     # Now run bbduk
     bbduk.sh \
-        reads=1000 \
         in1=${R1} \
         in2=${R2} \
         literal=${ADAPT1},${ADAPT2} \
+	usejni=t \
         ktrim=r \
         trimq=20 \
         minlen=85 \
-        ftr=85 \
+        ftr=84 \
+	k=25 \
+	mink=2 \
         out1=${OUT1} \
         out2=${OUT2}
 
     # Write an exit here just to check things        
     exit
+
 done
 
 # Run FastQC on the trimmed files
