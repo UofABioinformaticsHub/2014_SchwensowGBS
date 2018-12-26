@@ -1,0 +1,128 @@
+---
+title: "Inspect Demultiplexing"
+author: "Steve Pederson"
+output: 
+  html_document: 
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE, message = FALSE)
+```
+
+## Setup
+
+```{r loadPackages}
+library(ngsReports)
+library(magrittr)
+library(scales)
+library(pander)
+library(tidyverse)
+```
+
+```{r loadData}
+rawFqc <- list.files("../0_rawData/FastQC/", pattern = "zip", full.names = TRUE) %>%
+    getFastqcData()
+deMuxFqc <- list.files("../1_demux/FastQC/", pattern = "zip", full.names = TRUE) %>%
+    getFastqcData()
+samples <- read_tsv("../0_rawData/samples.tsv")
+```
+
+## Base Qualities
+
+Each of the libraries was inspected for overall quality.
+Positions 3 & 4 from R2 libraries `FCC21WPACXX-CHKPEI13070002_L6` and `FCC21WPACXX-CHKPEI13070003_L7` showed clear problems with read qualities.
+This was likely due to an unsatisfactory nucleotide diversity in the original sequencing run and not enough *phiX* to overcome this, particularly as all R2 reads will terminate with the restriction site.
+
+```{r, echo=FALSE, fig.height=12, fig.cap = "Base qualities before demultiplexing."}
+rawFqc %>% plotBaseQualities(plotType = "boxplot")
+```
+
+
+## Read Totals
+
+The first check after demultiplexing is to ensure that read were not assigned to multiple individuals by `sabre pe`.
+Read Totals before and after demultiplexing were then checked and the recovery rate was >90% for each library.
+This process was only applied to the data from the 1996 and 2012 populations as the Turretfield samples were provided after demultiplexing by the collaborators from this dataset.
+Results indicated that demultiplexing was performed with a high degree of success.
+
+```{r readTotals}
+rawReadTotals <- readTotals(rawFqc) %>%
+    mutate(Library = str_remove_all(Filename, "_[12].fq.gz")) %>%
+    distinct(Library, Total_Sequences)
+deMuxReadTotals <- readTotals(deMuxFqc) %>%
+    mutate(ID = str_remove_all(Filename, ".[12].fq.gz")) %>%
+    distinct(ID, Total_Sequences) %>%
+    left_join(samples, by = "ID") %>%
+    group_by(Library) %>%
+    summarise(DeMultiplexed = sum(Total_Sequences)) %>%
+    filter(!is.na(Library))
+```
+
+```{r, echo = FALSE}
+rawReadTotals %>%
+    left_join(deMuxReadTotals) %>%
+    mutate(`Recovery Rate` = DeMultiplexed / Total_Sequences) %>%
+    dplyr::select(Library, everything()) %>%
+    dplyr::rename(`Total Sequences` = Total_Sequences) %>%
+    mutate(`Recovery Rate` = percent(`Recovery Rate`)) %>%
+    pander(split.tables = Inf, big.mark = ",",
+           caption = "Recovery rate from demultiplexing the 1996 and 2012 samples") 
+```
+
+```{r, echo=FALSE, fig.cap="Read Totals for each 1996 & 2012 samples", fig.height=12}
+deMuxFqc %>%
+    magrittr::extract(grepl("(ora|gc).+1.fq.gz", fileName(.))) %>%
+    plotReadTotals(duplicated = FALSE, panel.grid = element_blank(), pattern = ".1.fq.gz")
+```
+
+```{r, echo=FALSE, fig.cap="Read Totals for each 1996 & 2012 samples", fig.height=8}
+deMuxFqc %>%
+    magrittr::extract(grepl("[ptTY].+1.fq.gz", fileName(.))) %>%
+    plotReadTotals(duplicated = FALSE, panel.grid = element_blank(), pattern = ".rename.1.fq.gz")
+```
+
+
+
+## GC Content
+
+
+```{r, echo=FALSE, fig.cap="GC content for all 1996 and 2012 samples."}
+deMuxFqc %>%
+    magrittr::extract(grepl("(ora|gc)", fileName(.))) %>%
+    plotGcContent(plotType = "line", usePlotly = TRUE, theoreticalGC = FALSE)
+```
+
+Inspection by GC content showed the `gc2709` and `gc2700` appeared to have an exaggerated peak around 60%, whilst all other samples showed a more broad spread across the range.
+From the Turretfield samples, `pt1125` showed an unexpected peak around 50% indicating that sample may contain reads from a different species.
+This sample should be excluded from all further analysis.
+
+```{r, echo=FALSE, fig.cap="GC content for all Turretfield samples."}
+deMuxFqc %>%
+    magrittr::extract(!grepl("(ora|gc)", fileName(.))) %>%
+    plotGcContent(plotType = "line", usePlotly = TRUE, theoreticalGC = FALSE)
+```
+
+## Adapter Content
+
+Adapter content was surprisingly high for some samples, and trimming to 71bp may be appropriate.
+
+```{r, echo=FALSE, fig.cap = "Adapter Content for all 1996 & 2012 samples.", fig.height=12}
+deMuxFqc %>%
+    magrittr::extract(grepl("(ora|gc)", fileName(.))) %>%
+    plotAdapterContent(counts = TRUE, plotType = "heatmap", usePlotly = TRUE, dendrogram = TRUE)
+```
+
+## Sequence Content
+
+```{r, echo=FALSE, fig.cap="Sequence content showing the presence of the RS in both the Turretfield and R2 samples.", fig.height=12}
+plotSequenceContent(deMuxFqc, usePlotly = TRUE)
+```
+
+## Conclusion
+
+- The restriction site should be removed from both R2 and Turretfield samples
+- Reads should then be trimmed to ~85bp to deal with Adapter sequences
