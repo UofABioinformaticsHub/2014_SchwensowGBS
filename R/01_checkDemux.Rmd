@@ -108,13 +108,29 @@ deMuxFqc %>%
 
 ## Adapter Content
 
-Adapter content was surprisingly high for some samples, and trimming to 71bp may be appropriate.
+Adapter content was surprisingly high for some samples, and trimming may be appropriate.
+Note that this plot understates read lengths.
 
 ```{r, echo=FALSE, fig.cap = "Adapter Content for all 1996 & 2012 samples.", fig.height=12}
 deMuxFqc %>%
     magrittr::extract(grepl("(ora|gc)", fileName(.))) %>%
     plotAdapterContent(counts = TRUE, plotType = "heatmap", usePlotly = TRUE, dendrogram = TRUE)
 ```
+
+## Read Lengths
+
+```{r, echo=FALSE, fig.cap = "Length Distributoin for R1 files"}
+deMuxFqc %>%
+    magrittr::extract(grepl("1.fq.gz", fileName(.))) %>%
+    plotSequenceLengthDistribution(usePlotly = TRUE)
+```
+
+```{r, echo=FALSE, fig.cap = "Length Distributoin for R2 files"}
+deMuxFqc %>%
+    magrittr::extract(grepl("2.fq.gz", fileName(.))) %>%
+    plotSequenceLengthDistribution(usePlotly = TRUE)
+```
+
 
 ## Sequence Content
 
