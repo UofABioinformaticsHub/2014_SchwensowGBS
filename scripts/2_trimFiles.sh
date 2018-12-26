@@ -32,21 +32,23 @@ for R1 in $(ls ${DEMUXFQ}/*1.fq.gz)
     do
 
     echo -e "R1 file is:\n${R1}\n"
-    R2=${R1%1.fq.gz}.2.fq.gz
+    R2=${R1%1.fq.gz}2.fq.gz
     echo -e "R2 file is:\n${R2}\n"
+    OUT1=${TRIMFQ}/$(basename ${R1})
+    OUT2=${TRIMFQ}/$(basename ${R2})
 
     # Now run bbduk
     bbduk.sh \
         reads=1000 \
-        in1=${DEMUXFQ}/${R1} \
-        in2=${DEMUXFQ}/${R2} \
+        in1=${R1} \
+        in2=${R2} \
         literal=${ADAPT1},${ADAPT2} \
         ktrim=r \
         trimq=20 \
         minlen=85 \
         ftr=85 \
-        out1=${TRIMFQ}/${R1} \
-        out2=${TRIMFQ}/${R2}
+        out1=${OUT1} \
+        out2=${OUT2}
 
     # Write an exit here just to check things        
     exit
