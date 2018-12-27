@@ -1,5 +1,7 @@
 *fq.gz
 *fq
+*discarded.gz
+*truncated.gz
 *sam
 *bam
 *bai
