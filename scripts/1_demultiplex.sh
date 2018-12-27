@@ -51,6 +51,7 @@ for f in ${BC}
     echo "R2 reads will be in ${LIB2}"
     
     # First detect the adapters
+    echo -e "Identifying adapters"
     bbmerge.sh \
         in1=${LIB1} \
         in2=${LIB2} \
@@ -64,8 +65,8 @@ for f in ${BC}
     echo -e "R2 Trimmed output will be in:\n\t${TRIM2}"
     A1=$(sed -n '2p' adapters.fa)
     A2=$(sed -n '4p' adapters.fa)
-    echo -e "Adapters read from adapters.fa as:\nAdapter1\t${A1}\nAdapter2\t{A2}"
-    BNAME=${TRIMFQ}/${f%barcodes}
+    echo -e "Adapters read from adapters.fa as:\nAdapter1\t${A1}\nAdapter2\t${A2}"
+    BNAME=${TRIMFQ}/${f%.barcodes}
     AdapterRemoval \
         --gzip \
         --qualitybase 64 \
@@ -73,7 +74,7 @@ for f in ${BC}
         --minquality 20 \
         --minlength 70 \
         --basename ${BNAME} \
-        --settings ${TRIMLOG}/${f%barcodes}_adapterRemoval.log \
+        --settings ${TRIMLOG}/${f%.barcodes}_adapterRemoval.log \
         --threads ${CORES} \
         --adapter1 ${A1} \
         --adapter2 ${A2} \
@@ -81,6 +82,9 @@ for f in ${BC}
         --output2 ${TRIM2} \
         --file1 ${LIB1} \
         --file2 ${LIB2}
+
+    # Cleanup by removing adapters.fa
+    rm adapters.fa
 
     # Demultiplex each library
     # Note the the output path is hardcoded into the barcodes file
