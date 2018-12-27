@@ -107,11 +107,11 @@ fastqc \
     -t ${CORES} \
     --no-extract \
     -o ${TRIMQC} \
-    ${TRIMFQ}/*gz
+    ${TRIMFQ}/*fq.gz
 
 # Run FastQC on the demultiplexed files
 fastqc \
     -t ${CORES} \
     --no-extract \
     -o ${DEMUXQC} \
-    ${DEMUXFQ}/*gz
+    ${DEMUXFQ}/*fq.gz
