@@ -30,7 +30,8 @@ trimFqc <- list.files("../1_trimmed/FastQC/", pattern = "zip", full.names = TRUE
     getFastqcData()
 deMuxFqc <- list.files("../2_demux/FastQC/", pattern = "zip", full.names = TRUE) %>%
     getFastqcData()
-origFqc <- list.files("../")
+origFqc <- list.files("../previousAnalysis/FastQC/", pattern = "fastqc.zip", full.names = TRUE) %>%
+    getFastqcData()
 samples <- read_tsv("../0_rawData/samples.tsv")
 ```
 
@@ -51,7 +52,7 @@ trimFqc %>% plotBaseQualities(plotType = "boxplot")
 
 ## Read Totals
 
-```{r}
+```{r, echo=FALSE}
 list(
     readTotals(rawFqc) %>% mutate(Type = "Raw"),
     readTotals(trimFqc) %>% mutate(Type = "Trimmed")
@@ -101,7 +102,7 @@ trimReadTotals %>%
            caption = "Recovery rate from demultiplexing the 1996 and 2012 samples") 
 ```
 
-```{r}
+```{r, echo=FALSE}
 cp <- paste("*Read Totals for each of the 1996 & 2012 samples.",
             "The black line indicates the mean library size,",
             "whilst the dashed green line indicates the mean library size based",
@@ -111,33 +112,123 @@ cp <- paste("*Read Totals for each of the 1996 & 2012 samples.",
 
 
 ```{r, echo=FALSE, fig.cap=cp}
-plotly::ggplotly(deMuxFqc %>%
-    magrittr::extract(grepl("(ora|gc).+1.fq.gz", fileName(.))) %>%
-    readTotals() %>%
-    mutate(ID = str_remove(Filename, ".1.fq.gz")) %>%
-    left_join(samples) %>%
-    mutate(Population = case_when(
-        grepl("gc", ID) ~ "1996",
-        grepl("ora", ID) ~ "2012"
-    )) %>%
-    ggplot(aes(ID, Total_Sequences, fill = Population)) +
-    geom_bar(stat = "identity") +
-    geom_hline(aes(yintercept = mn),
-               data = . %>% summarise(mn = mean(Total_Sequences))) +
-    geom_hline(aes(yintercept = mn),
-               data = . %>% group_by(Library) %>% summarise(mn = mean(Total_Sequences)),
-               colour = "green",
-               linetype = 2) +
-    facet_wrap(~Library, scales = "free_x", nrow = 2) +
-    scale_y_continuous(labels = comma) +
-    scale_fill_manual(values = c(rgb(0.1, 0.1, 0.7), rgb(0.7, 0.1, 0.1))) +
+plotly::ggplotly(
+    deMuxFqc %>%
+        magrittr::extract(grepl("(ora|gc).+1.fq.gz", fileName(.))) %>%
+        readTotals() %>%
+        mutate(ID = str_remove(Filename, ".1.fq.gz")) %>%
+        left_join(samples) %>%
+        mutate(Population = case_when(
+            grepl("gc", ID) ~ "1996",
+            grepl("ora", ID) ~ "2012"
+        )) %>%
+        ggplot(aes(ID, Total_Sequences, fill = Population)) +
+        geom_bar(stat = "identity") +
+        geom_hline(aes(yintercept = mn),
+                   data = . %>% summarise(mn = mean(Total_Sequences))) +
+        geom_hline(aes(yintercept = mn),
+                   data = . %>% group_by(Library) %>% summarise(mn = mean(Total_Sequences)),
+                   colour = "green",
+                   linetype = 2) +
+        facet_wrap(~Library, scales = "free_x", nrow = 2) +
+        scale_y_continuous(labels = comma) +
+        scale_fill_manual(values = c(rgb(0.1, 0.1, 0.7), rgb(0.7, 0.1, 0.1))) +
         labs(x = c(), y = c()) +
-    theme_bw() +
-    theme(axis.text.x = element_text(angle = 90),
-          legend.position = "none")
+        theme_bw() +
+        theme(axis.text.x = element_text(angle = 90),
+              legend.position = "none")
 )
 ```
 
+### Comparison against previous analysis
+
+The revised strategy showed considerable improvement in yield for the libraries `FCC21WPACXX-CHKPEI13070002_L6` and `FCC21WPACXX-CHKPEI13070003_L7` which both contained exculsively 1996 samples.
+As such the revised strategy was pursued further.
+
+```{r, echo=FALSE, fig.cap="Comparison of library sizes after demultiplexing using sabre (blue), vs the original method (salmon)."}
+list(
+    origFqc %>%
+        readTotals() %>%
+        mutate(ID = str_remove(Filename, ".Lib..[12].fq"),
+               Type = "Previous"),
+    deMuxFqc %>%
+        readTotals() %>%
+        mutate(ID = str_remove(Filename, ".[12].fq.gz"),
+               Type = "Repeat")
+) %>%
+    bind_rows() %>%
+    distinct(ID, Type, Total_Sequences) %>%
+    dplyr::select(ID, Type, Total_Sequences) %>%
+    filter(grepl("(gc|ora)", ID)) %>%
+    mutate(Population = case_when(
+            grepl("gc", ID) ~ "1996",
+            grepl("ora", ID) ~ "2012"
+        )) %>%
+    left_join(samples) %>%
+    ggplot(aes(Library, Total_Sequences, fill = Type)) +
+    geom_boxplot() +
+    labs(y = "Total Reads") +
+    scale_y_continuous(labels = comma) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+```{r, echo=FALSE, fig.cap="Changes in library size using the improved recovery strategy"}
+list(
+    origFqc %>%
+        readTotals() %>%
+        mutate(ID = str_remove(Filename, ".Lib..[12].fq"),
+               Type = "Previous"),
+    deMuxFqc %>%
+        readTotals() %>%
+        mutate(ID = str_remove(Filename, ".[12].fq.gz"),
+               Type = "Repeat")
+) %>%
+    bind_rows() %>%
+    distinct(ID, Type, Total_Sequences) %>%
+    dplyr::select(ID, Type, Total_Sequences) %>%
+    filter(grepl("(gc|ora)", ID)) %>%
+    spread("Type", "Total_Sequences") %>%
+    mutate(Change = Repeat / Previous,
+           Population = case_when(
+            grepl("gc", ID) ~ "1996",
+            grepl("ora", ID) ~ "2012"
+        )) %>%
+    left_join(samples) %>%
+    ggplot(aes(ID, Change, fill = Population)) +
+    geom_bar(stat = "identity") +
+    geom_hline(yintercept = 1, linetype = 2) +
+    facet_wrap(~Library, scales = "free_x", nrow = 2) +
+    scale_y_continuous(labels = percent) +
+    scale_fill_manual(values = c(rgb(0.1, 0.1, 0.7, 0.8), rgb(0.7, 0.1, 0.1, 0.8))) +
+    labs(x = c(), y = "% Improvement") +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90),
+          legend.position = "none")
+```
+
+```{r, echo=FALSE, fig.cap = "Comparison of library sizes for the three populations."}
+list(
+    origFqc %>%
+        magrittr::extract(!grepl("(ora|gc)", fileName(.))) %>%
+        readTotals(),
+    deMuxFqc %>%
+        magrittr::extract(grepl("1.fq", fileName(.))) %>%
+        readTotals()
+) %>%
+    bind_rows() %>%
+    mutate(Population = case_when(
+        grepl("ora", Filename) ~ 2012,
+        grepl("gc", Filename) ~ 1996,
+        !grepl("(ora|gc)", Filename) ~ 2010
+    ),
+    Population = as.factor(Population)) %>%
+    mutate(ID = str_remove(Filename, ".[12].fq.gz")) %>%
+    ggplot(aes(Population, Total_Sequences, fill = Population)) +
+    geom_boxplot() +
+    scale_y_continuous(labels = comma) +
+    theme_bw()
+```
 
 
 ## GC Content
@@ -149,39 +240,22 @@ deMuxFqc %>%
     plotGcContent(plotType = "line", usePlotly = TRUE, theoreticalGC = FALSE)
 ```
 
-Inspection by GC content showed the `gc2709` and `gc2700` appeared to have an exaggerated peak around 60%, whilst all other samples showed a more broad spread across the range.
-From the Turretfield samples, `pt1125` showed an unexpected peak around 50% indicating that sample may contain reads from a different species.
+Inspection by GC content showed that `gc2709` and `gc2700` appeared to have an exaggerated peak around 60%, whilst all other samples showed a more broad spread across the range.
+From the Turretfield samples (previous analysis), `pt1125` showed an unexpected peak around 50% indicating that sample may contain reads from a different species.
 This sample should be excluded from all further analysis.
 
 ```{r, echo=FALSE, fig.cap="GC content for all Turretfield samples."}
-deMuxFqc %>%
+origFqc %>%
     magrittr::extract(!grepl("(ora|gc)", fileName(.))) %>%
     plotGcContent(plotType = "line", usePlotly = TRUE, theoreticalGC = FALSE)
 ```
 
-## Adapter Content
-
-Adapter content was surprisingly high for some samples, and trimming may be appropriate.
-Note that this plot understates read lengths.
-
-```{r, echo=FALSE, fig.cap = "Adapter Content for all 1996 & 2012 samples.", fig.height=12}
-deMuxFqc %>%
-    magrittr::extract(grepl("(ora|gc)", fileName(.))) %>%
-    plotAdapterContent(counts = TRUE, plotType = "heatmap", usePlotly = TRUE, dendrogram = TRUE)
-```
 
 ## Read Lengths
 
-```{r, echo=FALSE, fig.cap = "Length Distributoin for R1 files"}
+```{r, echo=FALSE, fig.cap = "Length Distribution for all files"}
 deMuxFqc %>%
-    magrittr::extract(grepl("1.fq.gz", fileName(.))) %>%
-    plotSequenceLengthDistribution(usePlotly = TRUE)
-```
-
-```{r, echo=FALSE, fig.cap = "Length Distributoin for R2 files"}
-deMuxFqc %>%
-    magrittr::extract(grepl("2.fq.gz", fileName(.))) %>%
-    plotSequenceLengthDistribution(usePlotly = TRUE)
+    plotSequenceLengthDistribution(usePlotly = TRUE, dendrogram = TRUE)
 ```
 
 
@@ -193,5 +267,5 @@ plotSequenceContent(deMuxFqc, usePlotly = TRUE)
 
 ## Conclusion
 
-- The restriction site should be removed from both R2 and Turretfield samples
-- Reads should then be trimmed to ~85bp to deal with Adapter sequences
+- The restriction site should be removed from both R2 and Turretfield samples, especially given the high error rate at positions 2/3 in some R2 samples
+- No further processing is required as the presence of the restriction site at both ends means fixed length reads are not required for Stacks
