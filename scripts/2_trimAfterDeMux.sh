@@ -18,7 +18,7 @@
 ## The version of cutadapt installed in phoenix is not able to run in parallel
 ## so only 1 core is needed
 
-module load cutadapt/1.14-foss-2016b-Python-2.7.13
+module load FASTX-Toolkit/0.0.14-foss-2015b
 module load FastQC/0.11.7
 
 # Setup the paths
@@ -44,11 +44,12 @@ for F1 in ${R1}
     cp ${F1} ${DEST}/$(basename ${F1})
 
     echo "Trimming ${F2}"
-    cutadapt -g ^NNNNN -o ${DEST}/$(basename ${F2}) ${F2}
+    fastx_trimmer -f 6 -i ${F2} | \
+        gzip > ${DEST}/$(basename ${F2})
 
 done
 
-## And use the same NNNNN strategy for the Turretfield files
+## And use the same strategy for the Turretfield files
 ## This should be in a PE fashion, but given the TF files have sequence
 ## headers which are incompatible with bwa, this can be changed by running on 
 ## stdout/stdin
@@ -62,7 +63,7 @@ for F in ${FQ}
 
     echo -e "Trimming: ${F}"
     zcat ${F} | \
-        cutadapt -g ^NNNNN - | \
+        fastx_trimmer -f 6  | \
         sed -r 's|([^_]+)_([0-9]+)_([0-9]+)_([0-9]+)_([12])|\1:\2:\3:\4/\5|g' | \
         gzip > ${O}
     
