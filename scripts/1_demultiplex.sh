@@ -94,8 +94,8 @@ for f in ${BC}
       -f ${TRIM1} \
       -r ${TRIM2} \
       -b ${ROOTDIR}/barcodes/${f} \
-      -u ${LIB1%_1.fq.gz}_unknown_1.fq \
-      -w ${LIB2%_2.fq.gz}_unknown_2.fq
+      -u ${TRIM1%_1.fq.gz}_unknown_1.fq \
+      -w ${TRIM2%_2.fq.gz}_unknown_2.fq
 
   done
 
