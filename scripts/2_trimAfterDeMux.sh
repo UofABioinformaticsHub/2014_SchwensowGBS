@@ -15,9 +15,6 @@
 ## 2 - Trim the first 5 bases (i.e. TGCAG) from R2 files
 ## 3 - Trim the fist 5 bases from Turretfield samples in both R1 & R2
 
-## The version of cutadapt installed in phoenix is not able to run in parallel
-## so only 1 core is needed
-
 module load FASTX-Toolkit/0.0.14-foss-2015b
 module load FastQC/0.11.7
 
@@ -44,8 +41,9 @@ for F1 in ${R1}
     cp ${F1} ${DEST}/$(basename ${F1})
 
     echo "Trimming ${F2}"
-    fastx_trimmer -f 6 -i ${F2} | \
-        gzip > ${DEST}/$(basename ${F2})
+    zcat ${F2} | \
+      fastx_trimmer -f 6 | \
+      gzip > ${DEST}/$(basename ${F2})
 
 done
 
