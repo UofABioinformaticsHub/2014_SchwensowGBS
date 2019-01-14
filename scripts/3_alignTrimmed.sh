@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH -p test
+#SBATCH -p batch
 #SBATCH -N 1
 #SBATCH -n 16
-#SBATCH --time=2:00:00
+#SBATCH --time=24:00:00
 #SBATCH --mem=64GB
 #SBATCH -o /data/biohub/2014_SchwensowGBS/slurm/%x_%j.out
 #SBATCH -e /data/biohub/2014_SchwensowGBS/slurm/%x_%j.err
@@ -45,16 +45,14 @@ for F1 in ${R1}
     echo -e "Aligning:\n\t${F1}\n\t${F2}"
     BAM=${ALNDIR}/$(basename ${F1%1.fq.gz}bam)
     echo -e "Alignments are being written to:\n\t${BAM}"
-    bwa mem -M  -t ${THREADS} ${INDEX} ${F1} ${F2} | samtools -bS - > ${BAM} 
+    bwa mem -M  -t ${THREADS} ${INDEX} ${F1} ${F2} | samtools view -bS - > ${BAM} 
     
     echo -e "Sorting & Indexing ${BAM}"
-    samtools sort -@${THREADS} ${BAM} ${BAM%bam}sorted
+    samtools sort -@ ${THREADS} ${BAM} ${BAM%bam}sorted
     samtools index ${BAM%bam}sorted.bam
     
     echo -e "Deleting the unsorted file ${BAM}"
     rm ${BAM}
-    
-    exit
 
 done
 
