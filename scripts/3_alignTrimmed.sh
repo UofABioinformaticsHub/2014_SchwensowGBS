@@ -12,7 +12,9 @@
 
 ## This script is setup to:
 ## 1 - Align reads to the indexed genome
-## 2 - 
+## 2 - Sort & index the bam file
+## 3 - Delete the unsorted bam files
+## 4 - Run FastQC on the alignments
 
 module load BWA/0.7.15-foss-2017a
 module load SAMtools/0.1.19-GCC-5.3.0-binutils-2.25
@@ -43,10 +45,14 @@ for F1 in ${R1}
     echo -e "Aligning:\n\t${F1}\n\t${F2}"
     BAM=${ALNDIR}/$(basename ${F1%1.fq.gz}bam)
     echo -e "Alignments are being written to:\n\t${BAM}"
-    bwa mem -M  -t ${THREADS} ${INDEX} ${F1} ${F2} | samtools sort -@ ${THREADS} -o ${BAM} -
+    bwa mem -M  -t ${THREADS} ${INDEX} ${F1} ${F2} | samtools -bS - > ${BAM} 
     
-    echo -e "Indexing ${BAM}"
-    samtools index ${BAM}
+    echo -e "Sorting & Indexing ${BAM}"
+    samtools sort -@${THREADS} ${BAM} ${BAM%bam}sorted
+    samtools index ${BAM%bam}sorted.bam
+    
+    echo -e "Deleting the unsorted file ${BAM}"
+    rm ${BAM}
     
     exit
 
