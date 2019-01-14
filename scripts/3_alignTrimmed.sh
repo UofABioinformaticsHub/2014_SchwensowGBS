@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH -p batch
+#SBATCH -p test
 #SBATCH -N 1
-#SBATCH -n 1
-#SBATCH --time=24:00:00
-#SBATCH --mem=4GB
+#SBATCH -n 16
+#SBATCH --time=2:00:00
+#SBATCH --mem=64GB
 #SBATCH -o /data/biohub/2014_SchwensowGBS/slurm/%x_%j.out
 #SBATCH -e /data/biohub/2014_SchwensowGBS/slurm/%x_%j.err
 #SBATCH --mail-type=END
@@ -11,12 +11,16 @@
 #SBATCH --mail-user=stephen.pederson@adelaide.edu.au
 
 ## This script is setup to:
-## 1 - Move R1 files from 2_demux to 3_demuxTrimmed
-## 2 - Trim the first 5 bases (i.e. TGCAG) from R2 files
-## 3 - Trim the fist 5 bases from Turretfield samples in both R1 & R2
+## 1 - Align reads to the indexed genome
+## 2 - 
 
 module load BWA/0.7.15-foss-2017a
+module load SAMtools/0.1.19-GCC-5.3.0-binutils-2.25
 module load FastQC/0.11.7
+
+## The set parameters
+THREADS=16
+INDEX=/data/biorefs/reference_genomes/ensembl-release-94/oryctolagus-cuniculus/bwa/Oryctolagus_cuniculus.OryCun2.0.dna.toplevel
 
 # Setup the paths
 ROOTDIR=/data/biohub/2014_SchwensowGBS
@@ -29,7 +33,7 @@ mkdir -p ${ALNDIR}
 mkdir -p ${ALNQC}
 
 ## Now setup the gc/ora files
-R1=$(ls ${MAINSOURCE}/*1.fq.gz)
+R1=$(ls ${FQDIR}/*1.fq.gz)
 echo -e "Found:\n\t${R1}"
 
 for F1 in ${R1}
@@ -37,17 +41,19 @@ for F1 in ${R1}
 
     F2=${F1%1.fq.gz}2.fq.gz
     echo -e "Aligning:\n\t${F1}\n\t${F2}"
-
+    BAM=${ALNDIR}/$(basename ${F1%1.fq.gz}bam)
+    echo -e "Alignments are being written to:\n\t${BAM}"
+        
+    bwa mem -M  -t ${THREADS} ${INDEX} ${F1} ${F2} | samtools sort -@${THREADS} -o ${BAM} -
+    samtools index ${BAM}
+    
+    exit
 
 done
 
-exit
-
-## Index all the files
-
 # Run FastQC o the final set of files
 fastqc \
-    -t 1 \
+    -t ${THREADS} \
     --no-extract \
     -o ${ALNQC} \
     ${ALNDIR}/*bam
