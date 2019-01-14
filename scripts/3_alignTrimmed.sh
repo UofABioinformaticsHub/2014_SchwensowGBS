@@ -43,8 +43,9 @@ for F1 in ${R1}
     echo -e "Aligning:\n\t${F1}\n\t${F2}"
     BAM=${ALNDIR}/$(basename ${F1%1.fq.gz}bam)
     echo -e "Alignments are being written to:\n\t${BAM}"
-        
-    bwa mem -M  -t ${THREADS} ${INDEX} ${F1} ${F2} | samtools sort -@${THREADS} -o ${BAM} -
+    bwa mem -M  -t ${THREADS} ${INDEX} ${F1} ${F2} | samtools sort -@ ${THREADS} -o ${BAM} -
+    
+    echo -e "Indexing ${BAM}"
     samtools index ${BAM}
     
     exit
