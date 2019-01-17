@@ -14,4 +14,4 @@ stacks*
 slurm*
 QC/*
 rename/*
-5_stacks/*tsv.gz
+5_stacks/*

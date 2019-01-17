@@ -2,7 +2,7 @@
 #SBATCH -p batch
 #SBATCH -N 1
 #SBATCH -n 16
-#SBATCH --time=36:00:00
+#SBATCH --time=12:00:00
 #SBATCH --mem=64GB
 #SBATCH -o /data/biohub/2014_SchwensowGBS/slurm/%x_%j.out
 #SBATCH -e /data/biohub/2014_SchwensowGBS/slurm/%x_%j.err
@@ -48,3 +48,22 @@ ref_map.pl \
     -X "populations:-k" \
     --samples ${BAMDIR}
 
+## Now tidy the output from it's ridiculous form
+mkdir -p ${OUTDIR}/genepop
+mkdir -p ${OUTDIR}/plink
+mkdir -p ${OUTDIR}/beagle
+mkdir -p ${OUTDIR}/stacks
+mkdir -p ${OUTDIR}/vcf
+mkdir -p ${OUTDIR}/logs
+mv ${OUTDIR}/*bgl ${OUTDIR}/beagle
+mv ${OUTDIR}/*markers ${OUTDIR}/beagle
+mv ${OUTDIR}/*plink* ${OUTDIR}/plink
+mv ${OUTDIR}/*genepop ${OUTDIR}/genepop
+mv ${OUTDIR}/*log ${OUTDIR}/logs
+mv ${OUTDIR}/*vcf ${OUTDIR}/vcf
+mv ${OUTDIR}/batch* ${OUTDIR}/stacks
+
+# Compress where appropriate
+gzip ${OUTDIR}/stacks/*tsv
+gzip ${OUTDIR}/genepop/*
+gzip ${OUTDIR}/vcf/*
