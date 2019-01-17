@@ -2,7 +2,7 @@
 #SBATCH -p batch
 #SBATCH -N 1
 #SBATCH -n 16
-#SBATCH --time=24:00:00
+#SBATCH --time=36:00:00
 #SBATCH --mem=64GB
 #SBATCH -o /data/biohub/2014_SchwensowGBS/slurm/%x_%j.out
 #SBATCH -e /data/biohub/2014_SchwensowGBS/slurm/%x_%j.err
@@ -32,7 +32,6 @@ FILES=$(ls ${BAMDIR}/*bam)
 
 ## Now run the ref_map pipeline
 ref_map.pl \
-    -d \
     -b 1 \
     -T ${CORES} \
     -S \
