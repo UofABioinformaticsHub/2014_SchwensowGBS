@@ -45,7 +45,12 @@ for F1 in ${R1}
     echo -e "Aligning:\n\t${F1}\n\t${F2}"
     BAM=${ALNDIR}/$(basename ${F1%1.fq.gz}bam)
     echo -e "Alignments are being written to:\n\t${BAM}"
-    bwa mem -M  -t ${THREADS} ${INDEX} ${F1} ${F2} | samtools view -bS - > ${BAM} 
+    ## While writing to the BAM file, apply 2 filters:
+    ## 1 - Remove any read with a supplementary alignment (i.e. keep unique only) using the "SA" tag
+    ## 2 - Only keep reads with a mapping quality > 30 which is 1/1000 being wrong
+    bwa mem -M  -t ${THREADS} ${INDEX} ${F1} ${F2} | \
+        egrep -v "SA:Z:" | \
+        samtools view -bS -q30 - > ${BAM} 
     
     echo -e "Sorting & Indexing ${BAM}"
     samtools sort -@ ${THREADS} ${BAM} ${BAM%bam}sorted
@@ -53,6 +58,8 @@ for F1 in ${R1}
     
     echo -e "Deleting the unsorted file ${BAM}"
     rm ${BAM}
+    echo -e "Renaming the sorted file"
+    mv ${BAM%bam}sorted.bam ${BAM}
 
 done
 
