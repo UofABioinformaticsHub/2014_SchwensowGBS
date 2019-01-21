@@ -34,6 +34,10 @@ ALNQC=${ROOTDIR}/4_aligned/FastQC
 mkdir -p ${ALNDIR}
 mkdir -p ${ALNQC}
 
+## Delete any existing files
+rm ${ALNDIR}/*
+rm ${ALNQC}/*
+
 ## Now setup the gc/ora files
 R1=$(ls ${FQDIR}/*1.fq.gz)
 echo -e "Found:\n\t${R1}"
