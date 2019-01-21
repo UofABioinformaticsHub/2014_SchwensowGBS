@@ -56,14 +56,15 @@ for F1 in ${R1}
         egrep -v "SA:Z:" | \
         samtools view -bS -q30 - > ${BAM} 
     
-    echo -e "Sorting & Indexing ${BAM}"
+    echo -e "Sorting ${BAM}"
     samtools sort -@ ${THREADS} ${BAM} ${BAM%bam}sorted
-    samtools index ${BAM%bam}sorted.bam
-    
+
     echo -e "Deleting the unsorted file ${BAM}"
     rm ${BAM}
-    echo -e "Renaming the sorted file"
+    
+    echo -e "Renaming and indexing the sorted file"
     mv ${BAM%bam}sorted.bam ${BAM}
+    samtools index ${BAM}
 
 done
 
