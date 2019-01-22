@@ -1,0 +1,131 @@
+---
+title: "Check alignments"
+author: "Steve Pederson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+html_document: 
+fig_caption: yes
+fig_height: 6
+fig_width: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE, message = FALSE)
+```
+
+## Setup
+
+```{r loadPackages}
+library(ngsReports)
+library(magrittr)
+library(scales)
+library(pander)
+library(tidyverse)
+theme_set(theme_bw())
+```
+
+```{r}
+deMuxFqc <- list.files("../2_demux/FastQC/", pattern = "zip", full.names = TRUE) %>%
+    getFastqcData()
+alnFqc <- list.files("../4_aligned/FastQC/", pattern = "zip", full.names = TRUE) %>%
+    getFastqcData()
+```
+
+```{r oryGC, eval = FALSE, echo=FALSE}
+df <- ngsReports:::.gcFromFasta("../Oryctolagus_cuniculus.OryCun2.0.dna.toplevel.fa", n = 1e+06, bp = 100)
+df %<>% rename(Ocuniculus = Freq)
+oryGC <- new("TheoreticalGC", 
+             Genome = df, 
+             Transcriptome = data.frame(Name= c()), 
+             mData = tibble(Name = "Ocuniculus", 
+                            Group = "Animals", 
+                            Source = "Ensembl", 
+                            Version = "94", 
+                            Genome = TRUE, 
+                            Transcriptome = FALSE))
+write_rds(oryGC, "oryGC.RDS")
+```
+
+```{r loadOryGC}
+oryGC <- read_rds("oryGC.RDS")
+```
+
+
+## Compare Reads With Alignments
+
+```{r, echo=FALSE, fig.cap="*Comparison of library sizes before and after alignment. Some degree of multiple alignment was observed in all libraries*"}
+list(
+    readTotals(deMuxFqc) %>%
+        mutate(Sample = str_remove(Filename, ".[12].fq.gz")) %>%
+        group_by(Sample) %>%
+        summarise(Total_Sequences = sum(Total_Sequences)) %>%
+        mutate(Type = "Pre-Alignment"),
+    readTotals(alnFqc) %>%
+        mutate(Sample = str_remove(Filename, ".sorted.bam"),
+               Type = "Post-Alignment") %>%
+        dplyr::select(Sample, Type, Total_Sequences)
+) %>%
+    bind_rows() %>%
+    mutate(Population = case_when(
+        grepl("gc", Sample) ~ "1996",
+        grepl("ora", Sample) ~ "2012",
+        !grepl("(gc|ora)", Sample) ~ "2010"
+    )) %>%
+    filter(Population != "2010") %>%
+    ggplot(aes(Sample, Total_Sequences, fill = Type)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    coord_flip() +
+    facet_wrap(~Population, scales = "free") + 
+    scale_y_continuous(labels = comma)
+```
+
+```{r}
+readTotals(alnFqc) %>%
+    mutate(Sample = str_remove(Filename, ".sorted.bam"),
+           Population = case_when(
+               grepl("gc", Sample) ~ "1996",
+               grepl("ora", Sample) ~ "2012",
+               !grepl("(gc|ora)", Sample) ~ "2010"
+           )) %>%
+    dplyr::select(Sample, Population, Total_Sequences) %>%
+    group_by(Population) %>%
+    summarise(Samples = n(),
+              `Smallest Library` = min(Total_Sequences),
+              `Median Library` = median(Total_Sequences),
+              `Largest Library` = max(Total_Sequences),
+              `Total Alignments` = sum(Total_Sequences)) %>%
+    pander(big.mark = ",",
+           split.tables = Inf,
+           justify = "rrrrrr",
+           caption = "Summary of Library Sizes After Alignment")
+```
+
+## Identify Low Quality Samples by GC content
+
+```{r}
+lowQ <- paste(c("pt1125", "gc2709", "gc2700", "gc2776", "ora663"), "sorted", "bam", sep = ".")
+```
+
+Potential low quality samples were identified by GC content as `r pander(lowQ)`
+
+```{r, fig.cap = "*GC content of potential low quality samples*"}
+alnFqc %>%
+    magrittr::extract(fileName(.) %in% lowQ) %>%
+    plotGcContent(plotType = "line",usePlotly = TRUE, GCobject = oryGC, species = "Ocuniculus")
+```
+
+```{r, fig.cap="*GC content of remaining samples*"}
+alnFqc %>%
+    magrittr::extract(!fileName(.) %in% lowQ) %>%
+    plotGcContent(plotType = "line",usePlotly = TRUE, GCobject = oryGC, species = "Ocuniculus")
+```
+
+Alignments from these samples should be moved and placed into a separate folder to ensure their exclusion from the `stacks` pipeline.
+
+## Session Info
+
+```{r}
+sessionInfo() %>% pander()
+```
+
