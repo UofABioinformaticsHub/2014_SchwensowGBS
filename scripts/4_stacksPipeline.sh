@@ -42,7 +42,7 @@ ref_map.pl \
     -X "populations:--vcf" \
     -X "populations:--plink" \
     -X "populations:--beagle" \
-    -X "populations:-p 3" \
+    -X "populations:-p 2" \
     -X "populations:-r 0.75" \
     -X "populations:-f p_value" \
     -X "populations:-k" \
