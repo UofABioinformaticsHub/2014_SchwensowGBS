@@ -62,6 +62,7 @@ mv ${OUTDIR}/*genepop ${OUTDIR}/genepop
 mv ${OUTDIR}/*log ${OUTDIR}/logs
 mv ${OUTDIR}/*vcf ${OUTDIR}/vcf
 mv ${OUTDIR}/batch* ${OUTDIR}/stacks
+mv ${OUTDIR}/*tsv.gz ${OUTDIR}/stacks
 
 # Compress where appropriate
 gzip ${OUTDIR}/stacks/*tsv
