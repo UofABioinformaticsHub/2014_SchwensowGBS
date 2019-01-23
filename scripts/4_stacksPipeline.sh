@@ -31,32 +31,31 @@ mkdir -p ${OUTDIR}
 FILES=$(ls ${BAMDIR}/*bam)
 
 ## Now run the ref_map pipeline
+## This is set to merge overlapping sites from separate 'stacks' and order the output
 ref_map.pl \
     -b 1 \
     -T ${CORES} \
     -S \
-    -m 10 \
+    -m 5 \
     -O ${POPMAP} \
     -o ${OUTDIR} \
     -X "populations:--genepop" \
     -X "populations:--vcf" \
     -X "populations:--plink" \
-    -X "populations:--beagle" \
     -X "populations:-p 2" \
     -X "populations:-r 0.75" \
     -X "populations:-f p_value" \
     -X "populations:-k" \
+    -X "populations:--merge-sites" \
+    -X "populations:--ordered-export" \
     --samples ${BAMDIR}
 
 ## Now tidy the output from it's ridiculous form
 mkdir -p ${OUTDIR}/genepop
 mkdir -p ${OUTDIR}/plink
-mkdir -p ${OUTDIR}/beagle
 mkdir -p ${OUTDIR}/stacks
 mkdir -p ${OUTDIR}/vcf
 mkdir -p ${OUTDIR}/logs
-mv ${OUTDIR}/*bgl ${OUTDIR}/beagle
-mv ${OUTDIR}/*markers ${OUTDIR}/beagle
 mv ${OUTDIR}/*plink* ${OUTDIR}/plink
 mv ${OUTDIR}/*genepop ${OUTDIR}/genepop
 mv ${OUTDIR}/*log ${OUTDIR}/logs

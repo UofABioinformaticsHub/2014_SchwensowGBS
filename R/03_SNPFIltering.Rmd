@@ -1,0 +1,136 @@
+---
+title: "SNP Filtering"
+author: "Steve Pederson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 10
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE, message = FALSE)
+```
+
+## Setup
+
+```{r loadPackages}
+library(SeqArray)
+library(SNPRelate)
+library(pander)
+library(scales)
+library(magrittr)
+library(tidyverse)
+theme_set(theme_bw())
+```
+
+This workflow goes through multiple steps involved in processing the stacks output:
+
+1. Beginning with the VCF, this will be converted to a GDS object for easier interaction.
+As this is a slow conversion process, this will only be performed once.
+The resulting object will be used to prune SNPs in Linkage Disequilibruim
+
+
+### VCF Conversion to GDS
+
+```{r vcf2gds}
+gdsPath <- file.path("..", "5_stacks", "gds", "batch1.gds")
+if (!file.exists(gdsPath)) file.path("..", "5_stacks", "vcf", "batch_1.vcf.gz") %>%
+    seqVCF2GDS(gdsPath, reference = "OryCun2.0")
+gdsFile <- seqOpen(gdsPath, readonly = FALSE)
+```
+
+Sample information and subsequent population information was then extracted and added to the GDS file.
+
+```{r sampleID}
+sampleID <- seqGetData(gdsFile, "sample.id") %>%
+    as.data.frame(stringsAsFactors = FALSE) %>%
+    set_names("Sample") %>%
+    mutate(Population = case_when(
+        grepl("gc", Sample) ~ 1996L,
+        grepl("ora", Sample) ~ 2012L,
+        !grepl("(gc|ora)", Sample) ~ 2010L
+    ),
+    Location = case_when(
+        Population == 1996 ~ "Gum Creek",
+        Population == 2012 ~ "Oraparinna",
+        Population == 2010 ~ "Turretfield"
+    )) %>%
+    as_tibble()
+```
+
+```{r add Annotation}
+add.gdsn(gdsFile, "sample.annotation", sampleID, replace = TRUE)
+seqClose(gdsFile)
+gdsFile <- seqOpen(gdsPath, readonly = FALSE)
+```
+
+### SNP Data Summary
+
+```{r}
+chromosomes <- paste0("chr", c(1:21, "X"))
+scaffolds <- seqGetData(gdsFile, "chromosome") %>%
+    unique() %>%
+    setdiff(chromosomes)
+```
+
+
+Let's just check the distances, depth and SNP numbers on the main chromosomes
+
+```{r}
+snpSummary <- tibble(
+    variant.id = seqGetData(gdsFile, "variant.id") ,
+    chromosome = seqGetData(gdsFile, "chromosome"),
+    position = seqGetData(gdsFile, "position")
+) %>%
+    cbind(seqGetData(gdsFile, "annotation/format/DP")$data %>% 
+              t %>%
+              set_colnames(sampleID$Sample)) %>%
+    as_tibble()
+```
+
+- Check the call rate across all samples
+
+```{r}
+snpSummary %>%
+    mutate_at(sampleID$Sample, funs(equals), e2 = 0) %>%
+    summarise_at(sampleID$Sample, funs(sum)) %>%
+    gather(key = "Sample", value = "Missing") %>%
+    mutate(Called = nrow(snpSummary) - Missing) %>%
+    gather(key = "Type", value = "SNPs", -Sample) %>%
+    left_join(sampleID) %>%
+    ggplot(aes(Sample, SNPs / nrow(snpSummary), fill = Type)) +
+    geom_bar(stat = "identity") +
+    facet_wrap(~Population, scales = "free") +
+    coord_flip() +
+    labs(y = "Percent Called") +
+    scale_y_continuous(expand = expand_scale(0, 0), labels = percent) +
+    scale_fill_manual(values = c("green", "red"))
+```
+
+- Find SNPs unique to Turretfield
+
+```{r}
+# tfSNPs <- 
+snpSummary %>% 
+    gather(key = "Sample", value = "DP", -variant.id, -chromosome, -position)
+```
+
+
+### LD Pruning
+
+
+```{r ldPruning}
+set.seed(1523)
+snpset <- snpgdsLDpruning(gdsFile, autosome.only = FALSE)
+```
+
+- LD Pruning leaves a residual filter applied so this needs to be reset.
+
+```{r resetFilter}
+seqResetFilter(gdsFile) 
+```
+
