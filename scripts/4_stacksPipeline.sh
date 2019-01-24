@@ -42,12 +42,13 @@ ref_map.pl \
     -X "populations:--genepop" \
     -X "populations:--vcf" \
     -X "populations:--plink" \
+    -X "populations:--beagle_phased" \
     -X "populations:-p 2" \
     -X "populations:-r 0.75" \
     -X "populations:-f p_value" \
     -X "populations:-k" \
-    -X "populations:--merge-sites" \
-    -X "populations:--ordered-export" \
+    -X "populations:--merge_sites" \
+    -X "populations:--ordered_export" \
     --samples ${BAMDIR}
 
 ## Now tidy the output from it's ridiculous form
@@ -56,10 +57,10 @@ mkdir -p ${OUTDIR}/plink
 mkdir -p ${OUTDIR}/stacks
 mkdir -p ${OUTDIR}/vcf
 mkdir -p ${OUTDIR}/logs
-mv ${OUTDIR}/*plink* ${OUTDIR}/plink
-mv ${OUTDIR}/*genepop ${OUTDIR}/genepop
+mv ${OUTDIR}/batch*plink* ${OUTDIR}/plink
+mv ${OUTDIR}/batch*genepop ${OUTDIR}/genepop
 mv ${OUTDIR}/*log ${OUTDIR}/logs
-mv ${OUTDIR}/*vcf ${OUTDIR}/vcf
+mv ${OUTDIR}/batch*vcf ${OUTDIR}/vcf
 mv ${OUTDIR}/batch* ${OUTDIR}/stacks
 mv ${OUTDIR}/*tsv.gz ${OUTDIR}/stacks
 
