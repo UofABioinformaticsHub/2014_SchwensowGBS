@@ -54,9 +54,12 @@ ref_map.pl \
 ## Now tidy the output from it's ridiculous form
 mkdir -p ${OUTDIR}/genepop
 mkdir -p ${OUTDIR}/plink
+mkdir -p ${OUTDIR}/beagle
 mkdir -p ${OUTDIR}/stacks
 mkdir -p ${OUTDIR}/vcf
 mkdir -p ${OUTDIR}/logs
+mv ${OUTDIR}/*bgl ${OUTDIR}/beagle
+mv ${OUTDIR}/*markers ${OUTDIR}/beagle
 mv ${OUTDIR}/batch*plink* ${OUTDIR}/plink
 mv ${OUTDIR}/batch*genepop ${OUTDIR}/genepop
 mv ${OUTDIR}/*log ${OUTDIR}/logs
