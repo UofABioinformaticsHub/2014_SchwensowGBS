@@ -36,6 +36,8 @@ The resulting object will be used to prune SNPs in Linkage Disequilibruim
 
 ### VCF Conversion to GDS
 
+**NB: The AD field definition may need to be manually changed in the VCF header.**
+
 ```{r vcf2gds}
 gdsPath <- file.path("..", "5_stacks", "gds", "batch1.gds")
 if (!file.exists(gdsPath)) file.path("..", "5_stacks", "vcf", "batch_1.vcf.gz") %>%
