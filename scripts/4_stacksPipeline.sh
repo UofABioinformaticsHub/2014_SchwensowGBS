@@ -1,21 +1,10 @@
 #!/bin/bash
-#SBATCH -p batch
-#SBATCH -N 1
-#SBATCH -n 16
-#SBATCH --time=12:00:00
-#SBATCH --mem=64GB
-#SBATCH -o /data/biohub/2014_SchwensowGBS/slurm/%x_%j.out
-#SBATCH -e /data/biohub/2014_SchwensowGBS/slurm/%x_%j.err
-#SBATCH --mail-type=END
-#SBATCH --mail-type=FAIL
-#SBATCH --mail-user=stephen.pederson@adelaide.edu.au
 
 ## This script is to be run after demultiplexing, trimming and aligning using bwa
 ## Reads were not trimed to a fixed length, going by comments made by Julian Catchen
 ## on the Google Groups page
 
-## Load stacks
-module load Stacks/1.40-GCC-5.3.0-binutils-2.25
+## This is now set to run locally using stacks-2.3b due to disruptions on the phoenix HPC
 
 ## Define existing folders and variables
 CORES=16
@@ -33,41 +22,36 @@ FILES=$(ls ${BAMDIR}/*bam)
 ## Now run the ref_map pipeline
 ## This is set to merge overlapping sites from separate 'stacks' and order the output
 ref_map.pl \
-    -b 1 \
+    --samples ${BAMDIR} \
+    --popmap ${POPMAP} \
     -T ${CORES} \
-    -S \
-    -m 5 \
-    -O ${POPMAP} \
     -o ${OUTDIR} \
-    -X "populations:--genepop" \
-    -X "populations:--vcf" \
-    -X "populations:--plink" \
-    -X "populations:--beagle_phased" \
     -X "populations:-p 2" \
     -X "populations:-r 0.75" \
-    -X "populations:-f p_value" \
-    -X "populations:-k" \
+    -X "populations:--min_maf 0.05" \
+    -X "populations:-e pstI" \
     -X "populations:--merge_sites" \
+    -X "populations:--hwe" \
+    -X "populations:--fstats" \
+    -X "populations:--fst_correction p_value" \
+    -X "populations:-k" \
     -X "populations:--ordered_export" \
-    --samples ${BAMDIR}
+    -X "populations:--genepop" \
+    -X "populations:--vcf" \
+    -X "populations:--plink" 
 
-## Now tidy the output from it's ridiculous form
+## Now tidy the output
 mkdir -p ${OUTDIR}/genepop
 mkdir -p ${OUTDIR}/plink
-mkdir -p ${OUTDIR}/beagle
 mkdir -p ${OUTDIR}/stacks
 mkdir -p ${OUTDIR}/vcf
 mkdir -p ${OUTDIR}/logs
-mv ${OUTDIR}/*bgl ${OUTDIR}/beagle
-mv ${OUTDIR}/*markers ${OUTDIR}/beagle
-mv ${OUTDIR}/batch*plink* ${OUTDIR}/plink
-mv ${OUTDIR}/batch*genepop ${OUTDIR}/genepop
+mv ${OUTDIR}/?*plink* ${OUTDIR}/plink
+mv ${OUTDIR}/?*genepop ${OUTDIR}/genepop
 mv ${OUTDIR}/*log ${OUTDIR}/logs
-mv ${OUTDIR}/batch*vcf ${OUTDIR}/vcf
-mv ${OUTDIR}/batch* ${OUTDIR}/stacks
+mv ${OUTDIR}/?*vcf ${OUTDIR}/vcf
 mv ${OUTDIR}/*tsv.gz ${OUTDIR}/stacks
 
 # Compress where appropriate
-gzip ${OUTDIR}/stacks/*tsv
 gzip ${OUTDIR}/genepop/*
 gzip ${OUTDIR}/vcf/*
