@@ -50,8 +50,11 @@ mv ${OUTDIR}/?*plink* ${OUTDIR}/plink
 mv ${OUTDIR}/?*genepop ${OUTDIR}/genepop
 mv ${OUTDIR}/*log ${OUTDIR}/logs
 mv ${OUTDIR}/?*vcf ${OUTDIR}/vcf
-mv ${OUTDIR}/*tsv.gz ${OUTDIR}/stacks
+mv ${OUTDIR}/populations* ${OUTDIR}/stacks
+mv ${OUTDIR}/gstacks* ${OUTDIR}/stacks
+mv ${OUTDIR}/catalog* ${OUTDIR}/stacks
 
 # Compress where appropriate
 gzip ${OUTDIR}/genepop/*
 gzip ${OUTDIR}/vcf/*
+gzip ${OUTDIR}/stacks/*tsv

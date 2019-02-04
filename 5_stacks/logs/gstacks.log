@@ -1,0 +1,44 @@
+gstacks v2.3b, executed 2019-02-01 16:35:56
+/usr/local/bin/gstacks -I /data/biohub/2014_SchwensowGBS/4_aligned/bam/ -M /data/biohub/2014_SchwensowGBS/pop_map -O /data/biohub/2014_SchwensowGBS/5_stacks -t 16
+Locus/sample distributions will be written to '/data/biohub/2014_SchwensowGBS/5_stacks/gstacks.log.distribs'.
+
+Configuration for this run:
+  Input mode: reference-based
+  Population map: '/data/biohub/2014_SchwensowGBS/pop_map'
+  Input files: 146, e.g. '/data/biohub/2014_SchwensowGBS/4_aligned/bam/gc2364.bam'
+  Output to: '/data/biohub/2014_SchwensowGBS/5_stacks/'
+  Model: marukilow (var_alpha: 0.01, gt_alpha: 0.05)
+
+Reading BAM headers...
+Processing all loci...
+1K...
+2K...
+5K...
+10K...
+20K...
+50K...
+100K...
+200K...
+500K...
+1000K...
+2000K...
+done.
+
+Read 884908111 BAM records:
+  kept 846545540 primary alignments (95.7%), of which 425463763 reverse reads
+  skipped 0 primary alignments with insufficient mapping qualities (0.0%)
+  skipped 38362571 excessively soft-clipped primary alignments (4.3%)
+  skipped 0 unmapped reads (0.0%)
+
+  Per-sample stats (details in 'gstacks.log.distribs'):
+    read 6061014.5 records/sample (1264888-16146550)
+    kept 84.9%-97.9% of these
+
+Built 4310803 loci comprising 421081777 forward reads and 271921439 matching paired-end reads; mean insert length was 147.9 (sd: 58.6).
+
+Genotyped 4310803 loci:
+  effective per-sample coverage: mean=8.7x, stdev=3.1x, min=3.0x, max=20.3x
+  mean number of sites per locus: 136.8
+  a consistent phasing was found for 5186665 of out 5364135 (96.7%) diploid loci needing phasing
+
+gstacks is done.
