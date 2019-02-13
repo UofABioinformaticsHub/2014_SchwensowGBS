@@ -163,9 +163,34 @@ snpset <- gdsFile %>%
 seqResetFilter(gdsFile) 
 ```
 
+```{r, keepSNPs}
+keepSNPs <- c("variant.id", "position", "chromosome") %>%
+    sapply(function(x){
+        seqGetData(gdsFile, x)
+    }, simplify = FALSE) %>%
+    as_tibble() %>%
+    dplyr::filter(variant.id %in% unlist(snpset))
+```
+
+```{r plotKeepSNPs, echo = FALSE, fig.cap = "Summary of SNPs per chromosome after filtering for LD."}
+keepSNPs %>%
+    dplyr::filter(chromosome %in% c(1:22, "X")) %>%
+    group_by(chromosome) %>%
+    tally() %>%
+    mutate(chromosome = factor(chromosome, levels = 1:21)) %>%
+    droplevels() %>%
+    arrange(chromosome) %>%
+    ggplot(aes(chromosome, n)) +
+    geom_bar(stat = "identity") +
+    labs(x = "Primary Chromosomes",
+         y = "Number of SNPs retained for initial analysis") +
+    scale_x_discrete()
+```
+
+
 - This set of SNPs was then exported as an R object for downstream use.
 
 ```{r}
-write_rds(snpset, "snpsetAfterLDPruning.RDS")
+write_rds(keepSNPs, "keepSNPsAfterLDPruning.RDS")
 ```
 
