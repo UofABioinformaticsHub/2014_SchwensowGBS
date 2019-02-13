@@ -31,17 +31,20 @@ This workflow goes through multiple steps involved in processing the stacks outp
 
 1. Beginning with the VCF, this will be converted to a GDS object for easier interaction.
 As this is a slow conversion process, this will only be performed once.
-The resulting object will be used to prune SNPs in Linkage Disequilibruim
+The resulting object will be used to prune SNPs in Linkage Disequilibrium.
+Notably, this VCF is not available in this github repo as it is ~92Mb and too large.
+Likewise the prepared GDS object is 86.6Mb, which is also too large for storage on github.
 
 
 ### VCF Conversion to GDS
 
-**NB: The AD field definition may need to be manually changed in the VCF header.**
-
 ```{r vcf2gds}
-gdsPath <- file.path("..", "5_stacks", "gds", "batch1.gds")
-if (!file.exists(gdsPath)) file.path("..", "5_stacks", "vcf", "batch_1.vcf.gz") %>%
-    seqVCF2GDS(gdsPath, reference = "OryCun2.0")
+gdsPath <- file.path("..", "5_stacks", "gds", "populations.snps.gds")
+if (!file.exists(gdsPath)) {
+    dir.create(dirname(gdsPath))
+    file.path("..", "5_stacks", "vcf", "populations.snps.vcf.gz") %>%
+        seqVCF2GDS(gdsPath, reference = "OryCun2.0")
+}
 gdsFile <- seqOpen(gdsPath, readonly = FALSE)
 ```
 
@@ -72,7 +75,7 @@ gdsFile <- seqOpen(gdsPath, readonly = FALSE)
 
 ### SNP Data Summary
 
-```{r}
+```{r chromosomes}
 chromosomes <- paste0("chr", c(1:21, "X"))
 scaffolds <- seqGetData(gdsFile, "chromosome") %>%
     unique() %>%
@@ -82,7 +85,7 @@ scaffolds <- seqGetData(gdsFile, "chromosome") %>%
 
 Let's just check the distances, depth and SNP numbers on the main chromosomes
 
-```{r}
+```{r snpSummary}
 snpSummary <- tibble(
     variant.id = seqGetData(gdsFile, "variant.id") ,
     chromosome = seqGetData(gdsFile, "chromosome"),
@@ -94,11 +97,12 @@ snpSummary <- tibble(
     as_tibble()
 ```
 
-- Check the call rate across all samples
+- Checking the call rate across all samples, 5x1996 samples with SNP call rates < 50% were identified. 
+- This value was not exceeded by any samples in the 2010 or 2012 populations.
 
-```{r}
+```{r plotCallRate, fig.cap="Summary of SNP call rate in all samples", fig.height=7}
 snpSummary %>%
-    mutate_at(sampleID$Sample, funs(equals), e2 = 0) %>%
+    mutate_at(sampleID$Sample, funs(is.na)) %>%
     summarise_at(sampleID$Sample, funs(sum)) %>%
     gather(key = "Sample", value = "Missing") %>%
     mutate(Called = nrow(snpSummary) - Missing) %>%
@@ -106,6 +110,7 @@ snpSummary %>%
     left_join(sampleID) %>%
     ggplot(aes(Sample, SNPs / nrow(snpSummary), fill = Type)) +
     geom_bar(stat = "identity") +
+    geom_hline(yintercept = 0.5, linetype = 2) +
     facet_wrap(~Population, scales = "free") +
     coord_flip() +
     labs(y = "Percent Called") +
@@ -113,26 +118,54 @@ snpSummary %>%
     scale_fill_manual(values = c("green", "red"))
 ```
 
-- Find SNPs unique to Turretfield
+- No SNPs were found being unique to Turretfield, which is as expected by the settings given to `stacks`
 
-```{r}
-# tfSNPs <- 
-snpSummary %>% 
-    gather(key = "Sample", value = "DP", -variant.id, -chromosome, -position)
+```{r tfSNPs, eval=FALSE}
+tfSNPs <- snpSummary %>%
+    gather(key = "Sample", value = "DP", -variant.id, -chromosome, -position) %>%
+    mutate(DP = !is.na(DP)) %>%
+    left_join(sampleID) %>%
+    group_by(variant.id, chromosome, position, Population) %>%
+    summarise(n = sum(DP)) %>%
+    spread(key = "Population", value = n) %>%
+    filter(`1996` == 0 & `2012` == 0)
 ```
 
 
 ### LD Pruning
 
-
-```{r ldPruning}
+```{r ldPruning, results='hide'}
 set.seed(1523)
-snpset <- snpgdsLDpruning(gdsFile, autosome.only = FALSE)
+minMaf <- 0.05
+missingRate <- 0.25
+minCor <- 0.4
+snpset <- gdsFile %>%
+    snpgdsLDpruning(
+        sample.id = grep("(gc|ora)", seqGetData(., "sample.id"), value = TRUE),
+        autosome.only = FALSE,
+        maf = minMaf,
+        missing.rate = missingRate,
+        method = "corr",
+        ld.threshold = minCor
+        ) %>%
+    .[setdiff(names(.), "chrX")]
 ```
+
+- SNPs were pruned for Linkage Disequilibrium using only samples from the 1996 and 2012 populations and the following criteria:
+     + Minor Allele Frequency > `r percent(minMaf)`
+     + Missing Data in < `r percent(missingRate)` of samples
+     + Correlation of > `r percent(minCor)` indicating LD
+- This has left `r comma(sum(vapply(snpset, length, integer(1))))` SNPs as candidates for downstream analysis
 
 - LD Pruning leaves a residual filter applied so this needs to be reset.
 
-```{r resetFilter}
+```{r resetFilter, results='hide'}
 seqResetFilter(gdsFile) 
+```
+
+- This set of SNPs was then exported as an R object for downstream use.
+
+```{r}
+write_rds(snpset, "snpsetAfterLDPruning.RDS")
 ```
 
