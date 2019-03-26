@@ -102,8 +102,8 @@ snpSummary <- tibble(
 
 ```{r plotCallRate, fig.cap="Summary of SNP call rate in all samples", fig.height=7}
 snpSummary %>%
-    mutate_at(sampleID$Sample, funs(is.na)) %>%
-    summarise_at(sampleID$Sample, funs(sum)) %>%
+    mutate_at(sampleID$Sample, list(is.na)) %>%
+    summarise_at(sampleID$Sample, list(sum)) %>%
     gather(key = "Sample", value = "Missing") %>%
     mutate(Called = nrow(snpSummary) - Missing) %>%
     gather(key = "Type", value = "SNPs", -Sample) %>%

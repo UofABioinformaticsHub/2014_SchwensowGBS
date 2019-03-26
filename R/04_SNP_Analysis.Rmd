@@ -1,0 +1,331 @@
+---
+title: "Analysis of SNPs"
+author: "Steve Pederson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 10
+    toc: yes
+    toc_depth: 2
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE, message = FALSE)
+```
+
+## Setup
+
+```{r loadPackages}
+library(SeqArray)
+library(SNPRelate)
+library(pander)
+library(scales)
+library(magrittr)
+library(tidyverse)
+library(readxl)
+library(sp)
+library(ggmap)
+library(rgdal)
+library(ggsn)
+theme_set(theme_bw())
+```
+
+
+```{r pdfParams}
+w <- 169/25.4
+h <- 169/25.4
+```
+
+
+```{r loadGDS}
+gdsPath <- file.path("..", "5_stacks", "gds", "populations.snps.gds")
+gdsFile <- seqOpen(gdsPath, readonly = TRUE)
+```
+
+```{r loadFilteredSNPs}
+keepSNPs <- readRDS("keepSNPsAfterLDPruning.RDS")
+sampleID <- tibble(
+    Sample = seqGetData(gdsFile, "sample.annotation/Sample"),
+    Population = seqGetData(gdsFile, "sample.annotation/Population"),
+    Location = seqGetData(gdsFile, "sample.annotation/Location")
+)
+popSizes <- sampleID %>% 
+    group_by(Population) %>%
+    summarise(n = n())
+```
+
+
+```{r genotypes}
+genotypes <- tibble(
+    variant.id = seqGetData(gdsFile, "variant.id") ,
+    chromosome = seqGetData(gdsFile, "chromosome"),
+    position = seqGetData(gdsFile, "position")
+) %>%
+    cbind(seqGetData(gdsFile, "genotype") %>% 
+              apply(MARGIN = 3, colSums) %>%
+              t %>%
+              set_colnames(sampleID$Sample)) %>%
+    as_tibble() %>%
+    right_join(keepSNPs) %>%
+    gather(Sample, Genotype, -variant.id, -chromosome, -position) %>%
+    dplyr::filter(!is.na(Genotype)) %>%
+    arrange(variant.id, Sample) %>%
+    left_join(sampleID)
+```
+
+
+This workflow immediately follows `03_SNPFiltering` and performs an analysis on the SNPs retained after filtering.
+Analysis performed is:
+
+- Assess the rate of missing values by retained SNP and sample
+- Run a PCA analysis using SNPs & samples to minimise missing values
+- Execute the previous workflow
+
+
+## PCA
+
+```{r lowCall}
+lowCall <- c("gc2901", "gc2776", "gc2731", "gc2727", "gc2686")
+```
+
+
+```{r pca}
+snp4PCA <- genotypes %>% 
+    filter(!Sample %in% lowCall) %>%
+    group_by(variant.id, Population) %>% 
+    summarise(n = n()) %>% 
+    spread(Population, n) %>%
+    mutate(N = `1996` + `2010` + `2012`) %>% 
+    ungroup() %>%
+    filter(N > 0.95*(sum(popSizes$n) - length(lowCall)))
+pca <- genotypes %>%
+    filter(variant.id %in% snp4PCA$variant.id) %>%
+    dplyr::select(variant.id, Sample, Genotype) %>%
+    spread(Sample, Genotype) %>%
+    as.data.frame() %>%
+    column_to_rownames("variant.id") %>%
+    as.matrix() %>%
+    apply(2, function(x){
+        x[is.na(x)] <- mean(x, na.rm = TRUE)
+        x
+    }) %>%
+    t() %>%
+    .[, apply(., 2, function(x){length(unique(x)) > 1})] %>%
+    prcomp( center = TRUE)
+```
+
+As noted in the previous section sample samples `r pander(lowCall)` had a SNP identification rate $< 50$% and as such these were markd as potential outliers.
+Ignoring these samples, and restricting data to SNPs identified in $>95$% of all samples, a preliminary PCA was performed
+This amounted to `r comma(nrow(snp4PCA))` of the possible `r comma(length(unique(genotypes$variant.id)))` SNPs for analysis using PCA.
+Missing values were specified as the mean MAF over all populations combined.
+
+Given the initially observed structure, in which samples from the 2012 population are separating from the other samples which group with the 1996 population, the collection points for the 2012 samples as investigated.
+
+```{r addLatLong}
+sampleID %<>%
+    left_join(
+        file.path("..", "external", "GPS_Locations.xlsx") %>%
+            read_excel() %>%
+            dplyr::select(Sample, ends_with("tude")) %>%
+            mutate(Sample = gsub("[Oo][Rr][Aa] ([0-9ABC]*)", "ora\\1", Sample))
+    )
+```
+
+
+```{r plotPCA, echo=FALSE, fig.cap="*PCA showing population structure. Point size reflects the proportion of SNPs for which imputation was required, and the observed structure appeared independent of this.*"}
+fs <- 14
+ps <- 3
+popCols <- c(rgb(0, 0, 0, 0.7), 
+             rgb(0.5, 0.5, 1, 0.7),
+             rgb(0.8, 0.2, 0.2, 0.9), 
+             rgb(0.2, 0.8, 0.2, 0.9))
+pca4Plot <- pca$x %>%
+    as.data.frame() %>%
+    rownames_to_column("Sample") %>%
+    as_tibble() %>%
+    dplyr::select(Sample, PC1, PC2, PC3) %>%
+    left_join(sampleID) %>%
+    mutate(Cluster = kmeans(cbind(PC1, PC2, PC3), 3)$cluster) %>%
+    group_by(Cluster) %>%
+    mutate(maxY = max(Latitude, na.rm = TRUE)) %>%
+    ungroup() %>%
+    mutate(Population = case_when(
+        Population == 1996 ~ "1996",
+        Population == 2010 ~ "2010",
+        maxY == max(maxY) ~ "2012 (Outer)",
+        maxY != max(maxY) ~ "2012 (Central)"
+    )) %>%
+    left_join(genotypes %>% 
+                  filter(variant.id %in% snp4PCA$variant.id,
+                         !Sample %in% lowCall) %>% 
+                  group_by(Sample) %>% 
+                  tally() %>% 
+                  mutate(imputationRate = 1 - n / nrow(snp4PCA))) 
+pca4Plot %>%
+    ggplot(aes(PC1, PC2, colour = Population, size = imputationRate)) +
+    geom_point(alpha = 0.6) +
+    labs(x = paste0("PC1 (", percent(summary(pca)$importance[2,"PC1"]), ")"),
+         y = paste0("PC2 (", percent(summary(pca)$importance[2,"PC2"]), ")"),
+         size = "Imputation Rate") +
+    scale_colour_manual(values = popCols)
+```
+
+```{r mapParams}}
+loc <- c(range(sampleID$Longitude, na.rm = TRUE) %>% mean,
+         range(sampleID$Latitude, na.rm = TRUE) %>% mean)
+saPoly <- readRDS("saPoly.RDS")
+roads <- readRDS("roads.RDS")
+gc <- SpatialPoints(cbind(x = 138.655972, y = -31.200305))
+proj4string(gc) <- "+proj=longlat +ellps=GRS80 +no_defs"
+xBreaks <- seq(138.65, 138.8, by = 0.05)
+xLabs <- parse(text = paste(xBreaks, "*degree ~ E", sep = ""))
+yBreaks <- seq(-31.2, -31.32, by = -0.04)
+yLabs <- parse(text = paste(-yBreaks, "*degree ~ S", sep = ""))
+leftN <- tibble(x = c(138.7965, 138.8, 138.8) - 0.01,
+                    y = c(-31.2, -31.198, -31.193))
+rightN <- tibble(x = c(138.8, 138.8, 138.8035) - 0.01,
+                     y = c(-31.193, -31.198, -31.2))
+```
+
+```{r mainPlot}
+ggMap <- get_map(loc, zoom = 12, maptype = "terrain", color = "bw")
+zoomPlot <- ggmap(ggMap, extent = "normal", maprange = FALSE) +
+    geom_path(
+        aes(long, lat, group = group), 
+        data = subset(roads, SURFACE == "UNSE"), 
+        linetype = 2, size = 0.3) + 
+    geom_path(
+        aes(long, lat, group = group), 
+        data = subset(roads, SURFACE != "UNSE"), 
+        linetype = 1, size = 0.4) +
+    geom_label(x = 138.74, y = -31.29, label = "Flinders Ranges NP", alpha = 0.4) +
+    geom_label(x = 138.72, y = -31.22, label = "Gum Creek", alpha = 0.4) +
+    geom_point(aes(x, y), data = as.data.frame(gc), shape = 3, size = 3) +
+    geom_text(aes(x, y), label = "HS", data = as.data.frame(gc), nudge_y = 0.005) +
+    geom_polygon(
+        data = subset(saPoly, F_CODE == "HD"),
+        aes(long, lat, group = group),
+        fill = rgb(1, 1, 1, 0), colour = "grey10", size = 0.3) +
+    geom_polygon(
+        data = subset(saPoly, F_CODE == "PARK"),
+        aes(long, lat, group = group),
+        fill = rgb(1, 1, 1, 0), colour = "grey10", size = 0.2) +
+    geom_point(
+        data= filter(pca4Plot, grepl("2012", Population)),
+        aes(Longitude, Latitude, colour = Population),
+        size = 0.9*ps) +
+    geom_polygon(aes(x, y), data = leftN, fill = "white", colour = "grey10", size = 0.4) +
+    geom_polygon(aes(x, y), data = rightN, fill = "grey10", colour = "grey10", size = 0.4) +
+    geom_text(x = 138.79, y = -31.19, label = "N", 
+              colour = "grey10", size = 4) +
+    scale_colour_manual(values = popCols[3:4]) +
+    coord_cartesian(xlim = c(138.618, 138.81),
+                    ylim = c(-31.335, -31.18),
+                    expand = 0) +
+    scale_x_continuous(breaks = xBreaks, labels = xLabs) +
+    scale_y_continuous(breaks = yBreaks, labels = yLabs) +
+    guides(colour = FALSE) +
+    ggsn::scalebar(x.min = 138.618, x.max = 138.81,
+                   y.min = -31.335, y.max = -31.18,
+                   transform = TRUE,
+                   dist = 2, dist_unit = "km",
+                   model = 'GRS80',
+                   height = 0.012, st.size = 4,
+                   location = 'bottomright',
+                   anchor = c(x = 138.8, y = -31.328)) +
+    labs(x = "Longitude",
+         y = "Latitude") +
+    theme(text = element_text(size = fs),
+          plot.margin = unit(c(1, 1, 1, 1), "mm"))
+```
+
+
+```{r Map4Inset}
+ausPolygon <- readRDS("ausPolygon.RDS")
+ausPts <- SpatialPoints(cbind(x = loc[1], y = loc[2]))
+proj4string(ausPts) <- proj4string(ausPolygon)
+ausPlot <- ggplot() +
+  geom_polygon(data = ausPolygon, 
+               aes(long, lat, group = group), fill = "white", colour = "black") + 
+  geom_point(data = as.data.frame(ausPts), aes(x, y), size = 1.5) +
+  theme_void() +
+  theme(plot.background = element_rect(fill = "white", colour = "black"))
+```
+
+```{r map2Pdf, echo=FALSE}
+pdf(file.path("..", "figures", "Figure1.pdf"), width = w, height = h) 
+grid.newpage()
+vp1 <- viewport(0.5,0.5, 1, 1)
+vp2 <- viewport(0.32, 0.25, 0.33, 0.33)
+print(zoomPlot, vp = vp1)
+print(ausPlot, vp = vp2)
+dev.off()
+```
+
+```{bash, echo = FALSE}
+convert \
+  -density 600 \
+  -size 1920 \
+  ../figures/Figure1.pdf \
+  ../figures/Figure1.png
+```
+
+
+```{r plotWithInset_png, echo = FALSE, fig.cap="*Figure 2: Collection points for all 2012 samples with colours showing sub-populations initially defined by PCA analysis and *k*-means clustering.*", out.width='80%'}
+knitr::include_graphics(file.path("..", "figures", "Figure1.png"))
+```
+
+```{r zoomCentralPlot, fig.cap = "*Zoomed-in view of the central region for 2012 samples with colours showing sub-populations defined by PCA analysis. The region considered to be the Central Region is shaded in red. Due to overlapping GPS points a small amount of jitter has been added to the x-axis.*"}
+zoomLoc <- c(138.753, -31.242)
+xBreaks <- seq(138.74, 138.76, by = 0.01)
+xLabs <- parse(text = paste(xBreaks, "*degree ~ W", sep = ""))
+yBreaks <- seq(-31.235, -31.25, by = -0.005)
+yLabs <- parse(text = paste(-yBreaks, "*degree ~ S", sep = ""))
+central <- rbind(x = c(138.749, 138.755),
+                 y = c(-31.2365, -31.2495)) %>%
+  set_colnames(c("min", "max"))
+leftN <- tibble(x = c(138.7595, 138.76, 138.76),
+                    y = c(-31.234, -31.2335, -31.2325))
+rightN <- tibble(x = c(138.76, 138.76, 138.7605),
+                     y = c(-31.2325, -31.2335, -31.234))
+get_map(zoomLoc, zoom = 15, maptype = "terrain", source = "google", color = "bw") %>%
+    ggmap() +
+    geom_jitter(
+        data = filter(pca4Plot, grepl("2012", Population)), 
+        aes(Longitude, Latitude, colour = Population), 
+        size = 3, width = 0.0005, height = 0) +
+    geom_rect(
+        xmin = central["x", "min"],
+        xmax = central["x", "max"],
+        ymin = central["y", "min"],
+        ymax = central["y", "max"],
+        fill = "red", alpha = 0.01, colour = "black") +
+    geom_polygon(aes(x, y), data = leftN, fill = "white", colour = "grey10", size = 0.4) +
+    geom_polygon(aes(x, y), data = rightN, fill = "grey10", colour = "grey10", size = 0.4) +
+    geom_text(x = 138.76, y = -31.232, label = "N", 
+              colour = "grey10", size = 5) +
+    scale_colour_manual(values = popCols[3:4]) +
+    scale_x_continuous(breaks = xBreaks, labels = xLabs) +
+    scale_y_continuous(breaks = yBreaks, labels = yLabs) +
+    theme_bw() +
+    guides(colour = FALSE) +
+    labs(x = "Longitude",
+         y = "Latitude") +
+    coord_cartesian(xlim = c(138.74, 138.762),
+                    ylim = c(-31.253, -31.231),
+                    expand = 0) +
+    ggsn::scalebar(
+        x.min = 138.74, x.max = 138.762, 
+        y.min = -31.253, y.max = -31.231,
+        transform = TRUE,
+        dist = 0.25, dist_unit = "km",, model = 'GRS80', 
+        height = 0.012, st.size = 4,
+        location = 'bottomright',
+        anchor = c(x = 138.761, y = -31.252)
+    )
+```
+
