@@ -1,0 +1,323 @@
+---
+title: "Supplementary: FLK Analysis"
+author: "Steve Pederson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 10
+    toc: yes
+    toc_depth: 2
+---
+
+```{r setupFLK, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE, warning = FALSE)
+```
+
+```{r loadPackagesFLK}
+library(SeqArray)
+library(tidyverse)
+library(magrittr)
+library(rtracklayer)
+library(GenomicRanges)
+library(parallel)
+library(reshape2)
+library(pander)
+library(scales)
+library(stringr)
+library(qqman)
+library(plyranges)
+library(ape)
+theme_set(theme_bw())
+```
+
+```{r setParamsFLK}
+nCores <- min(12, detectCores() - 1)
+```
+
+## Introduction
+
+This supplementary analysis uses the FLK model as outlined in [Bonhomme et al, Detecting Selection in Population Trees: The Lewontin and Krakauer Test Extended](https://dx.doi.org/10.1534%2Fgenetics.110.117275).
+This test is robust to genetic drift, and is able to detect signatures of selection.
+However as this is a linear evolution dataset within one population as opposed to a series of approximately parallel selection events occurring within a series of populations, the assumptions of the FLK model may be less than satisfied.
+Hence this is presented as supplementary information.
+
+The script `FLK.R` was obtained from the [QGSP]( https://qgsp.jouy.inra.fr/archives/FLK/FLK.R) and loaded into `R`
+
+```{r loadFLK}
+source("FLK.R")
+```
+
+A third population was included as an outlier group, representing a population separated by a large geographic distance. 35 samples were taken from [Schwensow et al]( http://onlinelibrary.wiley.com/doi/10.1111/mec.14228/full).
+
+## Setup
+
+### Genes
+
+Gene information was obtained from Ensembl Build 84 and loaded 
+
+```{r ensGff}
+ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.84.gff3.gz") %>%
+    import.gff3(feature.type = "gene", sequenceRegionsAsSeqinfo = TRUE) 
+```
+
+
+### SNP Data Loading
+
+The same VCF/GDS data as in [03_snpFiltering](03_snpFiltering.Rmd) was loaded, retaining data from the third population (Turretfield).
+A `GRanges` object was defined containing all SNP information, and incorporating the Locus and Col information to remain compatible with `stacks`.
+
+```{r connectGDS}
+gdsPath <- file.path("..", "5_stacks", "gds", "populations.snps.gds")
+gdsFile <- seqOpen(gdsPath, readonly = TRUE)
+```
+
+```{r allSnpsGR}
+allSnpsGR <- tibble(
+    variant.id = seqGetData(gdsFile, "variant.id"),
+    position = seqGetData(gdsFile, "position"),
+    chromosome = seqGetData(gdsFile, "chromosome"),
+    id = seqGetData(gdsFile, "annotation/id")
+) %>%
+    mutate(id = str_remove(id, ":[\\+\\-]$")) %>%
+    separate(id, into = c("Locus ID", "Col")) %>%
+    mutate(Col = as.integer(Col) - 1,
+           snpID = paste(`Locus ID`, Col, sep = "_")) %>%
+    makeGRangesFromDataFrame(
+        seqinfo = seqinfo(ensGenes),
+        keep.extra.columns = TRUE, 
+        ignore.strand = TRUE, 
+        seqnames.field = "chromosome", 
+        start.field = "position", 
+        end.field = "position")
+```
+
+```{r sampleID}
+sampleID <- tibble(
+    Sample = seqGetData(gdsFile, "sample.annotation/Sample"),
+    Population = seqGetData(gdsFile, "sample.annotation/Population"),
+    Location = seqGetData(gdsFile, "sample.annotation/Location")
+)
+popSizes <- sampleID %>% 
+    group_by(Population) %>%
+    summarise(n = dplyr::n())
+```
+
+```{r snps2Keep}
+snps2Keep <- readRDS("keepSNPsAfterLDPruning.RDS") %>%
+    filter(!variant.id %in% readRDS("regionSNPs.RDS"))
+```
+
+
+```{r genotypes}
+genotypes <- tibble(
+    variant.id = seqGetData(gdsFile, "variant.id") 
+) %>%
+    cbind(seqGetData(gdsFile, "genotype") %>% 
+              apply(MARGIN = 3, colSums) %>%
+              t %>%
+              set_colnames(sampleID$Sample)) %>%
+    as_tibble() %>%
+    gather(Sample, Genotype, -variant.id) %>%
+    dplyr::filter(!is.na(Genotype)) %>%
+    arrange(variant.id, Sample) %>%
+    left_join(sampleID) 
+snpIn1996 <- genotypes %>% 
+    filter(Population == 1996) %>% 
+    group_by(variant.id) %>% 
+    summarise(maf = mean(Genotype) / 2) %>%
+    filter(maf > 0) %>%
+    dplyr::select(variant.id)
+genotypes %<>% 
+    right_join(snpIn1996)
+```
+
+```{r closeGDS}
+seqClose(gdsFile)
+```
+
+## FLK
+
+### Define Neutral Loci
+
+```{r neutralGR}
+neutralGR <- allSnpsGR %>% 
+    resize(199999, fix = "center") %>% 
+    trim() %>% 
+    filter_by_non_overlaps(ensGenes)
+```
+
+```{r neutMatrix}
+neutMatrix <- genotypes %>% 
+    filter(variant.id %in% neutralGR$variant.id) %>% 
+    group_by(variant.id, Population) %>% 
+    summarise(maf = mean(Genotype) / 2, 
+              n = dplyr::n()) %>% 
+    left_join(popSizes, by = "Population") %>% 
+    mutate(p = n.x / n.y, 
+           nPops = dplyr::n()) %>% 
+    filter(min(p) > 0.95, nPops == 3) %>%
+    ungroup() %>%
+    dplyr::select(variant.id, Population, maf) %>%
+    spread(Population, maf) %>%
+    left_join(allSnpsGR %>%
+                  mcols() %>%
+                  as.data.frame()) %>%
+    distinct(Locus.ID, `1996`, `2010`, `2012`) %>%
+    as.data.frame() %>%
+    dplyr::select(-Locus.ID) %>%
+    t() %>%
+    set_rownames(c("1996", "Outgroup (Turretfield)", "2012"))
+```
+
+- Putative neutral loci were defined as those > 100kb from a gene, with the additional criteria that the SNP be identified in >95% of individuals from all 3 populations.
+- Where multiple SNPs were detected within a locus with identical frequencies, only one was included.
+- Reynolds distance was calculated using the minor allele frequencies for this set of loci.
+
+### Estimation of the Co-ancestry Matrix (F_ij)
+
+The above gave a final list of `r comma(ncol(neutMatrix))` putatively neutral SNPs for estimation of Reynolds Distance as the first step towards calculating the co-ancestry matrix $\mathcal{F}_{ij}$.
+
+```{r reynDist}
+reynDist <- reynolds(neutMatrix)
+```
+
+```{r, echo=FALSE}
+reynDist %>%
+  pander(justify = "lrrr",
+         split.tables = Inf,
+         caption = "Reynolds Distance as calculated using the neutral loci as defined above.")
+```
+
+
+```{r F_ij}
+F_ij <- Fij(neutMatrix, "Outgroup (Turretfield)", reynDist)
+```
+
+```{r njTree, echo=FALSE, fig.height=4, fig.cap="*Neighbour-joining Tree for all 3 populations.*"}
+plot(root(nj(reynDist), "Outgroup (Turretfield)"))
+```
+
+### FLK Results
+
+```{r flkResults}
+flkResults <- genotypes %>%
+    filter(variant.id %in% snps2Keep$variant.id,
+           Population != 2010) %>%
+    group_by(variant.id, Population) %>%
+    summarise(maf = mean(Genotype) / 2) %>%
+    spread(Population, maf) %>%
+    as.data.frame() %>%
+    column_to_rownames("variant.id") %>%
+    t() %>%
+    FLK(Fij = F_ij) %>%
+    rownames_to_column("variant.id") %>%
+    as_tibble() %>%
+    dplyr::select(variant.id, Ht, contains("F.LK")) %>%
+    mutate(FDR = p.adjust(F.LK.p.val, method = "fdr"),
+           P_bonf = p.adjust(F.LK.p.val, method = "bonferroni")) %>%
+    arrange(F.LK.p.val)
+```
+
+```{r flkResPander, echo=FALSE}
+flkResults %>%
+    filter(FDR < 0.1) %>%
+    mutate(variant.id = as.integer(variant.id)) %>%
+    left_join(allSnpsGR %>%
+                  as.data.frame() %>%
+                  dplyr::select(seqnames, start, variant.id, snpID)) %>%
+    left_join(filter(genotypes, 
+                     variant.id %in% .$variant.id, 
+                     Population %in% c(1996, 2012)) %>%
+                  group_by(Population, variant.id) %>%
+                  summarise(maf = mean(Genotype) / 2)) %>%
+    spread(Population, maf) %>%
+    dplyr::select(variant.id, snpID, chr = seqnames, pos = start, `1996`, `2012`, p = F.LK.p.val, FDR) %>%
+    arrange(p) %>%
+    mutate(pos = comma(pos)) %>%
+    unite(Location, chr, pos, sep = ":") %>%
+    pander(justify = "lllrrrr",
+           split.tables = Inf,
+           caption = "Potentially significant SNPs under FLK, showing MAFs for both time-points")
+```
+
+- No SNPs achieved statistical significance under FLK using Bonferroni's adjustment
+- A total of `r sum(flkResults$FDR < 0.1)` were considered of potential interest using an FDR of 0.1.
+
+```{r flkResGenes, echo=FALSE}
+allSnpsGR %>% 
+    subset(variant.id %in% filter(flkResults, FDR < 0.1)$variant.id) %>% 
+    resize(width = 79999, fix = "center") %>% 
+    join_overlap_inner(ensGenes) %>% 
+    as.data.frame() %>% 
+    dplyr::select(variant.id, snpID, gene = Name, chr = seqnames) %>%
+    cbind(granges(allSnpsGR[as.integer(.$variant.id)]) %>% as.data.frame()) %>%
+    dplyr::select(variant.id, snpID, gene, chr, pos = start) %>%
+    mutate(variant.id = as.character(variant.id),
+           pos = comma(pos)) %>%
+    left_join(flkResults) %>%
+    dplyr::select(-Ht, -F.LK, -P_bonf) %>%
+    unite(Location, chr, pos, sep = ":") %>%
+    pander(caption = "Genes within 40kb of SNPs considered as being of interest under FLK to an FDR of 10%")
+```
+
+
+```{r, eval=FALSE}
+flkResults %>% write_tsv("flkResults.tsv")
+```
+
+```{r, manhattanFLK, echo = FALSE, fig.height=5, fig.width=8, fig.cap = "*Manhattan plot showing results for all SNPs on chromosomes 1:21 when analysing using the FLK model. The horizontal line indicates the cutoff for an FDR of 10%. No SNPs were considered significant under the Bonferroni adjustment.*"}
+hLine <- max(filter(flkResults, FDR < 0.1)$F.LK.p.val)
+flkResults %>%
+    mutate(variant.id = as.integer(variant.id)) %>%
+    left_join(as.data.frame(allSnpsGR)) %>%
+    filter(seqnames %in% 1:21) %>%
+    distinct(snpID, .keep_all = TRUE) %>%
+    mutate(seqnames = as.character(seqnames),
+           seqnames = as.integer(seqnames)) %>%
+  filter(!is.na(seqnames)) %>%
+  dplyr::select(SNP = snpID, CHR = seqnames, BP = start, P = F.LK.p.val) %>%
+  manhattan(suggestiveline = FALSE, 
+            genomewideline = -log10(hLine))
+```
+
+```{r flkSigMafs, echo = FALSE, fig.cap = "*Minor Allele Frequencies for the SNPs identified under FLK to an FDR of 10%*"}
+flkResults %>% 
+    filter(FDR < 0.1) %>% 
+    mutate(variant.id = as.integer(variant.id)) %>% 
+    left_join(genotypes) %>% 
+    filter(Population %in% c(1996, 2012)) %>% 
+    mutate(Population = as.factor(Population), 
+           variant.id = as.factor(variant.id)) %>%
+    group_by(variant.id, Population) %>% 
+    summarise(maf = mean(Genotype) / 2) %>% 
+    ggplot(aes(Population, maf, fill = Population)) + 
+    geom_bar(stat = "identity") + 
+    facet_wrap(~variant.id) +   
+    scale_fill_manual(values = c(rgb(0.1, 0.1, 0.1), rgb(0.2, 0.2, 0.8))) +
+    labs(y = "Minor Allele Frequency") +
+    theme(legend.position = c(5/6, 0.25))
+```
+
+```{r flkAllMafs, echo = FALSE, fig.cap = "*MAFS from all tested SNPs, showing those considered as significant under FLK in red.*"}
+genotypes %>%
+    filter(variant.id %in% flkResults$variant.id,
+           Population %in% c(1996, 2012)) %>%
+    group_by(variant.id, Population) %>%
+    summarise(maf = mean(Genotype) / 2) %>%
+    spread(Population, maf) %>%
+    mutate(Sig = variant.id %in% filter(flkResults, FDR < 0.1)$variant.id) %>%
+    ggplot(aes(`1996`, `2012`, colour = Sig)) +
+    geom_point() +
+    scale_colour_manual(values = c(rgb(0.5,0.5,0.5, 0.6), "red")) +
+    labs(x = "MAF (1996)", y = "MAF (2012)") +
+    theme(legend.position = "none")
+```
+
+## Session Info
+
+```{r sessionInfo, echo=FALSE, results='asis'}
+pander(sessionInfo()) 
+```

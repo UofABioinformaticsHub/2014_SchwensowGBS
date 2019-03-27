@@ -47,6 +47,12 @@ w <- 169/25.4
 h <- 169/25.4
 ```
 
+This workflow immediately follows `03_SNPFiltering` and performs an analysis on the SNPs retained after filtering.
+Analysis performed is:
+
+- Assess the rate of missing values by retained SNP and sample
+- Run a PCA analysis using SNPs & samples to minimise missing values
+- Execute the previous workflow
 
 ```{r loadGDS}
 gdsPath <- file.path("..", "5_stacks", "gds", "populations.snps.gds")
@@ -84,13 +90,23 @@ genotypes <- tibble(
     left_join(sampleID)
 ```
 
+- After loading the data from the previous section, an additional fitering step was performed, where SNPs where required have a non-zero MAF in the initial 1996 population.
 
-This workflow immediately follows `03_SNPFiltering` and performs an analysis on the SNPs retained after filtering.
-Analysis performed is:
+```{r}
+snpIn1996 <- genotypes %>% 
+    filter(Population == 1996) %>% 
+    group_by(variant.id) %>% 
+    summarise(maf = 1 - mean(Genotype) / 2) %>%
+    filter(maf > 0)
+genotypes %<>% 
+    right_join(snpIn1996)
+```
 
-- Assess the rate of missing values by retained SNP and sample
-- Run a PCA analysis using SNPs & samples to minimise missing values
-- Execute the previous workflow
+- This additional filtering step restricted analysis to `r comma(nrow(snpIn1996))` SNPs instead of the initial `r comma(nrow(keepSNPs))` SNPs
+
+```{r}
+seqClose(gdsFile)
+```
 
 
 ## PCA
@@ -647,3 +663,7 @@ convert \
 ```{r manhattanAllele_png, echo = FALSE, fig.cap = "Manhattan plot showing results for all SNPs on chromosomes 1:21 when analysing by allele frequencies. The horizontal line indicates the cutoff for an FDR of 5%, with SNPs considered significant under the Bonferroni adjustment shown in green.", out.width='80%'}
 knitr::include_graphics(file.path("..", "figures", "FigureS3b.png"))
 ```
+
+### Analysis Using the FLK model
+
+
