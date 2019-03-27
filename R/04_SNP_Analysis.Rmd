@@ -33,10 +33,14 @@ library(rgdal)
 library(ggsn)
 library(parallel)
 library(qqman)
-theme_set(theme_bw())
+library(ggrepel)
+library(plyranges)
+library(rtracklayer)
 ```
 
-```{r}
+```{r otherParams}
+theme_set(theme_bw())
+panderOptions("missing", "")
 mc <- min(12, detectCores() - 1)
 alpha <- 0.05
 ```
@@ -68,35 +72,45 @@ sampleID <- tibble(
 )
 popSizes <- sampleID %>% 
     group_by(Population) %>%
-    summarise(n = n())
+    summarise(n = dplyr::n())
 ```
 
 
 ```{r genotypes}
-genotypes <- tibble(
+snps <- tibble(
     variant.id = seqGetData(gdsFile, "variant.id") ,
     chromosome = seqGetData(gdsFile, "chromosome"),
-    position = seqGetData(gdsFile, "position")
+    position = seqGetData(gdsFile, "position"),
+    snpID = seqGetData(gdsFile, "annotation/id")
 ) %>%
+    mutate(snpID = str_remove(snpID, ":.$"),
+           snpID = str_replace(snpID, ":", "_")) %>%
+    separate(snpID, into = c("Locus ID", "Col"), remove = FALSE) %>%
+    mutate_at(vars(`Locus ID`, Col), as.integer) %>%
+    mutate(Col = Col - 1,
+           snpID = paste(`Locus ID`, Col, sep = "_")) %>%
+    right_join(keepSNPs)
+seqSetFilter(gdsFile, variant.id = snps$variant.id)
+genotypes <- snps %>%
     cbind(seqGetData(gdsFile, "genotype") %>% 
               apply(MARGIN = 3, colSums) %>%
               t %>%
               set_colnames(sampleID$Sample)) %>%
     as_tibble() %>%
-    right_join(keepSNPs) %>%
-    gather(Sample, Genotype, -variant.id, -chromosome, -position) %>%
+    gather(Sample, Genotype, one_of(sampleID$Sample)) %>%
     dplyr::filter(!is.na(Genotype)) %>%
     arrange(variant.id, Sample) %>%
     left_join(sampleID)
+seqResetFilter(gdsFile)
 ```
 
 - After loading the data from the previous section, an additional fitering step was performed, where SNPs where required have a non-zero MAF in the initial 1996 population.
 
-```{r}
+```{r snpIn1996}
 snpIn1996 <- genotypes %>% 
     filter(Population == 1996) %>% 
     group_by(variant.id) %>% 
-    summarise(maf = 1 - mean(Genotype) / 2) %>%
+    summarise(maf = mean(Genotype) / 2) %>%
     filter(maf > 0)
 genotypes %<>% 
     right_join(snpIn1996)
@@ -104,8 +118,39 @@ genotypes %<>%
 
 - This additional filtering step restricted analysis to `r comma(nrow(snpIn1996))` SNPs instead of the initial `r comma(nrow(keepSNPs))` SNPs
 
-```{r}
+```{r closeGDS}
 seqClose(gdsFile)
+```
+
+In addition to the above, the set of genes corresponding the Ensembl Release 84 were loaded.
+
+```{r ensGenes}
+ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.84.gff3.gz") %>%
+    import.gff3(feature.type = "gene", sequenceRegionsAsSeqinfo = TRUE) %>%
+    .[,c("gene_id", "Name", "description")]
+```
+
+The set of SNPs under invetigation was also defined as a GRanges object.
+
+```{r snpsGR}
+snpsGR <- makeGRangesFromDataFrame(
+    df = snps, 
+    keep.extra.columns = TRUE, 
+    ignore.strand = TRUE, 
+    seqinfo = seqinfo(ensGenes), 
+    seqnames.field = "chromosome", 
+    start.field = "position", 
+    end.field = "position"
+)
+```
+
+This was intersected with the set of genes to connect SNPs to genes within 40kb.
+
+```{r snp2Gene}
+snp2Gene <- snpsGR %>% 
+    resize(width = 199999) %>%
+    trim() %>%
+    join_overlap_inner(ensGenes) 
 ```
 
 
@@ -120,7 +165,7 @@ lowCall <- c("gc2901", "gc2776", "gc2731", "gc2727", "gc2686")
 snp4PCA <- genotypes %>% 
     filter(!Sample %in% lowCall) %>%
     group_by(variant.id, Population) %>% 
-    summarise(n = n()) %>% 
+    summarise(n = dplyr::n()) %>% 
     spread(Population, n) %>%
     mutate(N = `1996` + `2010` + `2012`) %>% 
     ungroup() %>%
@@ -200,8 +245,8 @@ pca4Plot %>%
 ```{r mapParams}}
 loc <- c(range(sampleID$Longitude, na.rm = TRUE) %>% mean,
          range(sampleID$Latitude, na.rm = TRUE) %>% mean)
-saPoly <- readRDS("saPoly.RDS")
-roads <- readRDS("roads.RDS")
+saPoly <- readRDS(file.path("..", "external", "saPoly.RDS"))
+roads <- readRDS(file.path("..", "external", "roads.RDS"))
 gc <- SpatialPoints(cbind(x = 138.655972, y = -31.200305))
 proj4string(gc) <- "+proj=longlat +ellps=GRS80 +no_defs"
 xBreaks <- seq(138.65, 138.8, by = 0.05)
@@ -268,7 +313,7 @@ zoomPlot <- ggmap(ggMap, extent = "normal", maprange = FALSE) +
 
 
 ```{r Map4Inset}
-ausPolygon <- readRDS("ausPolygon.RDS")
+ausPolygon <- readRDS(file.path("..", "external", "ausPolygon.RDS"))
 ausPts <- SpatialPoints(cbind(x = loc[1], y = loc[2]))
 proj4string(ausPts) <- proj4string(ausPolygon)
 ausPlot <- ggplot() +
@@ -357,9 +402,9 @@ get_map(zoomLoc, zoom = 15, maptype = "terrain", source = "google", color = "bw"
 ### Removal of SNPs Associated with Collection Region
 
 The structure observed within the 2012 population in the PCA could possibly be explained by recent migration into this region.
-As the samples collected in the outer regions appeared very similar to the 1996 population in the above plots, this would possibly indicate this a very recent event as the genetic influence of this has not spread through the wider area.
+As the samples collected in the outer regions appeared very similar to the 1996 population in the above plots, this would possibly indicate migration a very recent event as the genetic influence of this has not spread through the wider area.
 Although this may be due to other factors such as sampling bias, this structure was addressed by identifying SNPs which showed an association with the sub-populations identified by PCA analysis.
-In this way, any candidate SNPs obtained below will be less impacted by this structure, and will be more reflective of the intended variable under study, as opposed to any internal structure of the 2012 population.
+In this way, any candidate SNPs obtained below will be less impacted by this structure, and will be more reflective of the intended variable under study, i.e. selection over time, as opposed to any internal structure of the 2012 population.
 
 ```{r oraRegions}
 oraRegions <- pca4Plot %>% 
@@ -394,24 +439,26 @@ regionResults <- genotypes %>%
                 fisher.test()
         }
         x %>%
-            distinct(variant.id, chromosome, position) %>%
+            distinct(variant.id, snpID, chromosome, position) %>%
             mutate(p = ft$p.value)
     }, mc.cores = mc) %>%
-    bind_rows() 
+    bind_rows() %>%
+    filter(!is.na(p)) %>%
+    arrange(p)
 ```
 
 
-A total of `r sum(regionResults$p < 0.05, na.rm = TRUE)` SNPs were detected as showing a significant association between genotype and the collection region.
+A total of `r sum(regionResults$p < 0.05)` SNPs were detected as showing a significant association between genotype and the collection region.
 Under H<sub>0</sub>, the number expected using &#945; = 0.05 would be `r floor(0.05*length(unique(genotypes$variant.id)))`, and as this number was approximately double that expected, this was taken as evidence of this being a genuine point of concern for this dataset.
 
 Notably, Type II errors were of principle concern in this instance, and as such every SNP with p < 0.05 in the above test was excluded from downstream analysis.
 
 ```{r regionSNPs}
-regionSNPs <- filter(regionResults, p < 0.05)$variant.id
+regionSNPs <- filter(regionResults, p < 0.05)
 saveRDS(regionSNPs, "regionSNPs.RDS")
 ```
 
-Under this additional filtering step, **the original set of `r nrow(regionResults)` SNPs will be reduced to `r comma(sum(regionResults$p >= 0.05, na.rm = TRUE))`** for testing by genotype and allele frequency.
+Under this additional filtering step, **the original set of `r nrow(regionResults)` SNPs will be reduced to `r comma(sum(regionResults$p >= 0.05))`** for testing by genotype and allele frequency.
 
 #### Verification Of Removal
 
@@ -422,7 +469,7 @@ The previous structure noted in the data was no longer evident, and as such, the
 ```{r pcaPost}
 pcaPost <- genotypes %>%
     filter(variant.id %in% snp4PCA$variant.id,
-           !variant.id %in% regionSNPs) %>%
+           !variant.id %in% regionSNPs$variant.id) %>%
     dplyr::select(variant.id, Sample, Genotype) %>%
     spread(Sample, Genotype) %>%
     as.data.frame() %>%
@@ -507,8 +554,8 @@ H<sub>A</sub>: An association exists between genotypes and populations
 ```{r genotypeResults}
 genotypeResults <- genotypes %>%
     filter(Population != 2010,
-           !variant.id %in% regionSNPs) %>%
-    group_by(variant.id, Population, Genotype) %>%
+           !variant.id %in% regionSNPs$variant.id) %>%
+    group_by(variant.id, snpID, Population, Genotype) %>%
     tally() %>%
     ungroup() %>%
     split(f = .$variant.id) %>%
@@ -518,7 +565,7 @@ genotypeResults <- genotypes %>%
             ft <- x %>%
                 spread(Genotype, n, fill = 0) %>%
                 column_to_rownames("Population") %>%
-                dplyr::select(-variant.id) %>%
+                dplyr::select(-variant.id, -snpID) %>%
                 fisher.test()
         }
         x %>% 
@@ -531,8 +578,8 @@ genotypeResults <- genotypes %>%
            adjP = p.adjust(p, "bonferroni")) %>%
     arrange(p) %>%
     left_join(genotypes %>%
-                  distinct(variant.id, chromosome, position)) %>%
-    dplyr::select(variant.id, chromosome, position, everything())
+                  distinct(variant.id, snpID, chromosome, position)) %>%
+    dplyr::select(variant.id, snpID, chromosome, position, everything())
 ```
 
 
@@ -545,9 +592,14 @@ Under the full genotype model:
 ```{r,echo=FALSE}
 genotypeResults %>%
     filter(adjP < alpha) %>%
-    pander(justify = "llrrrr",
+    dplyr::select(-variant.id) %>%
+    left_join(subset(snp2Gene, snpID %in% .$snpID) %>%
+                  as.data.frame() %>%
+                  dplyr::select(snpID, `Gene within 100kb` = Name)) %>% 
+    pander(justify = "llrrrrl",
            style = "rmarkdown",
            big.mark = ",",
+           split.tables = Inf,
            caption = paste(
                "SNPs with adjusted p-values <", alpha, "when analysing by genotype."))
 ```
@@ -555,7 +607,7 @@ genotypeResults %>%
 ```{r manhattanGenotype, echo = FALSE, results='hide'}
 pdf(file.path("..", "figures", "FigureS3a.pdf"), height = 0.6*h, width = w)
 hLine <- max(filter(genotypeResults, FDR < alpha)$p)
-hLight <- filter(genotypeResults, adjP < alpha)$variant.id
+hLight <- filter(genotypeResults, adjP < alpha, chromosome %in% 1:21)$variant.id
 genotypeResults %>%
   mutate(Chr = as.numeric(chromosome)) %>%
   filter(!is.na(Chr)) %>%
@@ -579,6 +631,36 @@ convert \
 knitr::include_graphics(file.path("..", "figures", "FigureS3a.png"))
 ```
 
+```{r plotSigGenotypes, echo = FALSE, fig.cap="*Variants detected as significant to an FDR of 5%. Those denoted with an asterisk received a Bonferroni-adjusted p-value < 0.05 and these typically involved reduction of the minor allele frequency and a shift towards homozygous reference. The remaining sites showed a combination of the same and increasing minor allele abundance, with some variants becoming exclusively heterozygous in the 2012 population.*"}
+genotypeResults %>% 
+    filter(FDR < alpha) %>% 
+    left_join(
+        filter(
+            genotypes, 
+            snpID %in% .$snpID, 
+            Population %in% c(1996, 2012)
+        )
+    ) %>% 
+    mutate(Genotype = c("AA", "AB", "BB")[Genotype + 1],
+           Genotype = as.factor(Genotype),
+           Population = as.factor(Population),
+           snpID = case_when(
+               adjP < alpha ~ paste0(snpID, "*"),
+               adjP >= alpha ~ as.character(snpID)
+           ),
+           snpID = factor(snpID, levels = unique(snpID))) %>% 
+    ggplot(aes(Genotype, fill = Population)) + 
+    geom_bar(position = position_dodge2(preserve = "single")) + 
+    facet_wrap(~snpID, drop = FALSE, ncol = 7) + 
+    scale_fill_manual(values = c("black", "blue")) +
+    labs(y = "Count") + 
+    theme(
+        legend.direction = "horizontal", 
+        legend.position = c(0.75, 0.05)
+    )
+```
+
+
 ### Allele Frequency Model
 
 This model tests:  
@@ -588,12 +670,12 @@ H<sub>A</sub>: An association exists between allele frequencies  and populations
 ```{r alleleResults}
 alleleResults <- genotypes %>%
     filter(Population != 2010,
-           !variant.id %in% regionSNPs) %>%
-    group_by(variant.id, Population) %>%
+           !variant.id %in% regionSNPs$variant.id) %>%
+    group_by(snpID, Population) %>%
     summarise(P = sum(2 - Genotype),
               Q = sum(Genotype)) %>%
     ungroup() %>%
-    split(f = .$variant.id) %>%
+    split(f = .$snpID) %>%
     mclapply(function(x){
         m <- as.matrix(x[c("P", "Q")])
         ft <- list(p.value = NA) 
@@ -602,20 +684,20 @@ alleleResults <- genotypes %>%
         }
         x %>%
             mutate(MAF = Q / (P + Q)) %>%
-            dplyr::select(variant.id, Population, MAF) %>%
+            dplyr::select(snpID, Population, MAF) %>%
             spread(Population, MAF) %>%
             mutate(p = ft$p.value)
     },mc.cores = mc) %>%
     bind_rows() %>%
     filter(!is.na(p)) %>%
-    rename(MAF_1996 = `1996`,
-           MAF_2012 = `2012`) %>%
+    dplyr::rename(MAF_1996 = `1996`,
+                  MAF_2012 = `2012`) %>%
     mutate(FDR = p.adjust(p, "fdr"),
            adjP = p.adjust(p, "bonferroni")) %>%
     arrange(p) %>%
     left_join(genotypes %>%
-                  distinct(variant.id, chromosome, position)) %>%
-    dplyr::select(variant.id, chromosome, position, everything())
+                  distinct(snpID, chromosome, position)) %>%
+    dplyr::select(snpID, chromosome, position, everything())
 ```
 
 Under this model:
@@ -628,7 +710,11 @@ However, as these SNPs were within 21nt of each other, this may represent the sa
 ```{r,echo=FALSE}
 alleleResults %>%
     filter(FDR < alpha) %>%
-    pander(justify = "llrrrrrr",
+    left_join(subset(snp2Gene, snpID %in% .$snpID) %>%
+                  as.data.frame() %>%
+                  dplyr::select(snpID, `Gene within 100kb` = Name)
+    ) %>% 
+    pander(justify = "llrrrrrrl",
            style = "rmarkdown",
            big.mark = ",",
            split.tables = Inf,
@@ -639,12 +725,11 @@ alleleResults %>%
 ```{r manhattanAllele, echo = FALSE, fig.height=5, fig.width=8, }
 pdf(file.path("..", "figures", "FigureS3b.pdf"), height = 0.6*h, width = w)
 hLine <- max(filter(alleleResults, FDR < alpha)$p)
-hLight <- as.character(filter(alleleResults, adjP < 0.05)$variant.id)
+hLight <- as.character(filter(alleleResults, adjP < 0.05, chromosome %in% 1:21)$snpID)
 alleleResults %>%
-  mutate(Chr = as.numeric(chromosome),
-         variant.id = as.character(variant.id)) %>%
+  mutate(Chr = as.numeric(chromosome)) %>%
   filter(!is.na(Chr)) %>%
-  dplyr::select(SNP = variant.id, CHR = Chr, BP = position, P = p) %>%
+  dplyr::select(SNP = snpID, CHR = Chr, BP = position, P = p) %>%
   manhattan(suggestiveline = FALSE, 
             genomewideline = -log10(hLine),
             highlight = hLight)
@@ -664,6 +749,46 @@ convert \
 knitr::include_graphics(file.path("..", "figures", "FigureS3b.png"))
 ```
 
+
+```{r plotMAF, echo=FALSE, fig.cap = "*Comparison of minor allele frequencies in both populations. SNPs with an FDR-adjusted p-value < 0.05 are coloured red, whilst those with a Bonferroni-adjusted p-value are additionally labelled.*"}
+alleleResults %>%
+    mutate(Sig = FDR < alpha) %>%
+    ggplot(aes(MAF_1996, MAF_2012, colour = Sig, label = snpID)) +
+    geom_point() +
+    geom_text_repel(data = . %>% filter(adjP < alpha)) +
+    # geom_text_repel(data = . %>%filter(FDR < alpha & MAF_2012 > MAF_1996)) +
+    scale_colour_manual(values = c(rgb(0.5, 0.5, 0.5, 0.6), "red")) +
+    labs(x = "MAF (1996)", y = "MAF (2012)") +
+    theme(legend.position = "none")
+```
+
+
 ### Analysis Using the FLK model
 
+This was performed seperately and no SNPs of specific interest were detected. 
+
+### Export of Data for Bayescan
+
+A VCF was required with only the 1996 and 2012 populations, and restricted to the candidate SNPs after pruning for linkage disequilibrium and detection of the allele in the 1996 population.
+
+```{r, eval=FALSE}
+gdsFile <- seqOpen(gdsPath, readonly = TRUE)
+seqSetFilter(gdsFile, 
+             variant.id = genotypes %>% 
+                 distinct(variant.id, snpID) %>%
+                 filter(snpID %in% filter(regionResults, p > 0.05)$snpID) %>% 
+                 .[["variant.id"]],
+             sample.id = sampleID %>% 
+                 filter(Population %in% c(1996, 2012)) %>% 
+                 .[["Sample"]])
+seqGDS2VCF(gdsFile, "../5_stacks/vcf/filtered.vcf.gz")
+seqResetFilter(gdsFile)
+seqClose(gdsFile)
+```
+
+## Session Information
+
+```{r sessionInfo, echo=FALSE, results='asis'}
+pander(sessionInfo()) 
+```
 
