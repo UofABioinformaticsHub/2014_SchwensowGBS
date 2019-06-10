@@ -125,7 +125,7 @@ seqClose(gdsFile)
 In addition to the above, the set of genes corresponding the Ensembl Release 84 were loaded.
 
 ```{r ensGenes}
-ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.84.gff3.gz") %>%
+ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz") %>%
     import.gff3(feature.type = "gene", sequenceRegionsAsSeqinfo = TRUE) %>%
     .[,c("gene_id", "Name", "description")]
 ```

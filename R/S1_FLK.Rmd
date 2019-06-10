@@ -59,7 +59,7 @@ A third population was included as an outlier group, representing a population s
 Gene information was obtained from Ensembl Build 84 and loaded 
 
 ```{r ensGff}
-ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.84.gff3.gz") %>%
+ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz") %>%
     import.gff3(feature.type = "gene", sequenceRegionsAsSeqinfo = TRUE) 
 ```
 
