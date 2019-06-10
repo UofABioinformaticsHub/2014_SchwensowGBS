@@ -36,6 +36,7 @@ library(qqman)
 library(ggrepel)
 library(plyranges)
 library(rtracklayer)
+library(AnnotationDbi)
 ```
 
 ```{r otherParams}
@@ -104,7 +105,7 @@ genotypes <- snps %>%
 seqResetFilter(gdsFile)
 ```
 
-- After loading the data from the previous section, an additional fitering step was performed, where SNPs where required have a non-zero MAF in the initial 1996 population.
+- After loading the data from the previous section, an additional fitering step was performed, where SNPs were required to have a non-zero MAF in the initial 1996 population.
 
 ```{r snpIn1996}
 snpIn1996 <- genotypes %>% 
@@ -122,7 +123,7 @@ genotypes %<>%
 seqClose(gdsFile)
 ```
 
-In addition to the above, the set of genes corresponding the Ensembl Release 84 were loaded.
+In addition to the above, the set of genes corresponding the Ensembl Release 96 were loaded.
 
 ```{r ensGenes}
 ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz") %>%
@@ -591,17 +592,18 @@ Under the full genotype model:
 
 ```{r,echo=FALSE}
 genotypeResults %>%
-    filter(adjP < alpha) %>%
-    dplyr::select(-variant.id) %>%
-    left_join(subset(snp2Gene, snpID %in% .$snpID) %>%
-                  as.data.frame() %>%
-                  dplyr::select(snpID, `Gene within 100kb` = Name)) %>% 
-    pander(justify = "llrrrrl",
-           style = "rmarkdown",
-           big.mark = ",",
-           split.tables = Inf,
-           caption = paste(
-               "SNPs with adjusted p-values <", alpha, "when analysing by genotype."))
+  filter(adjP < alpha) %>%
+  dplyr::select(-variant.id) %>%
+  left_join(subset(snp2Gene, snpID %in% .$snpID) %>%
+              as.data.frame() %>%
+              dplyr::select(snpID, `Gene within 100kb` = Name)) %>% 
+  mutate(position = comma(position)) %>%
+  pander(justify = "llrrrrl",
+         style = "rmarkdown",
+         big.mark = ",",
+         split.tables = Inf,
+         caption = paste(
+           "SNPs with adjusted p-values <", alpha, "when analysing by genotype."))
 ```
 
 ```{r manhattanGenotype, echo = FALSE, results='hide'}
@@ -762,6 +764,31 @@ alleleResults %>%
     theme(legend.position = "none")
 ```
 
+```{r plotSigAlleles, echo = FALSE, fig.cap="*Variants detected as significant to an FDR of 5% under the Allele Frequency model. Those denoted with an asterisk received a Bonferroni-adjusted p-value < 0.05 and these typically involved reduction of the minor allele frequency and a shift towards homozygous reference. The remaining sites showed a combination of the same and increasing minor allele abundance.*"}
+alleleResults %>% 
+  filter(FDR < alpha) %>% 
+  gather(Population, B, contains("MAF")) %>%
+  mutate(Population = str_remove(Population, "MAF_"),
+         A = 1 - B,
+         Population = as.factor(Population),
+         snpID = case_when(
+           adjP < alpha ~ paste0(snpID, "*"),
+           adjP >= alpha ~ as.character(snpID)
+         ),
+         snpID = factor(snpID, levels = unique(snpID))) %>% 
+  gather(Allele, Freq, A, B) %>%
+  ggplot(aes(Allele, y = Freq, fill = Population)) + 
+  geom_bar(position = position_dodge2(preserve = "single"),
+           stat = "identity") + 
+  facet_wrap(~snpID, drop = FALSE, ncol = 7) + 
+  scale_fill_manual(values = c("black", "blue")) +
+  labs(y = "Count") + 
+  theme(
+    legend.direction = "horizontal", 
+    legend.position = c(0.75, 0.05)
+  )
+```
+
 
 ### Analysis Using the FLK model
 
@@ -771,13 +798,17 @@ This was performed seperately and no SNPs of specific interest were detected.
 
 A VCF was required with only the 1996 and 2012 populations, and restricted to the candidate SNPs after pruning for linkage disequilibrium and detection of the allele in the 1996 population.
 
+```{r var2VCF}
+var2VCF <- genotypes %>% 
+  distinct(variant.id, snpID) %>%
+  filter(snpID %in% filter(regionResults, p > 0.05)$snpID) %>% 
+  .[["variant.id"]]
+```
+
 ```{r, eval=FALSE}
 gdsFile <- seqOpen(gdsPath, readonly = TRUE)
 seqSetFilter(gdsFile, 
-             variant.id = genotypes %>% 
-                 distinct(variant.id, snpID) %>%
-                 filter(snpID %in% filter(regionResults, p > 0.05)$snpID) %>% 
-                 .[["variant.id"]],
+             variant.id = var2VCF,
              sample.id = sampleID %>% 
                  filter(Population %in% c(1996, 2012)) %>% 
                  .[["Sample"]])
@@ -785,6 +816,163 @@ seqGDS2VCF(gdsFile, "../5_stacks/vcf/filtered.vcf.gz")
 seqResetFilter(gdsFile)
 seqClose(gdsFile)
 ```
+
+### Inclusion of Bayescan Results
+
+After running Bayescan, results were imported.
+Unfortunately, these results had IDs which were taken from the line in the above VCF and need to be converted back to IDs compatible with previous analysis.
+
+```{r bayRes}
+bayRes <- read_csv("../external/BayOut_FDR5.csv") %>%
+  dplyr::rename(ID = X1) %>%
+  mutate(variant.id = var2VCF[ID])
+```
+
+```{r plotVenn, echo=FALSE, fig.cap = "*Summary of results from all three methods, using an FDR of 0.05 for each approach*"}
+grid.newpage()
+list(
+  genotype = dplyr::filter(genotypeResults, FDR < alpha)$variant.id,
+  allele = alleleResults %>%
+    left_join(snps) %>%
+    dplyr::filter(FDR < alpha) %>%
+    .[["variant.id"]],
+  bayescan = bayRes$variant.id
+) %>% 
+ VennDiagram::venn.diagram(filename = NULL) %>%
+  grid.draw()
+```
+
+## Enrichment testing
+
+SNPs were mapped to GO terms and tested for enrichment.
+In order to avoid double counting, GO terms were mapped to each SNP so that if multiple genes were within a given distance of a SNP, only one set of GO terms would be tested for that SNP.
+
+```{r sigSnpGR}
+sigSnpGR <- c(
+  dplyr::filter(genotypeResults, FDR < alpha)$snpID,
+  dplyr::filter(alleleResults, FDR < alpha)$snpID
+) %>%
+  unique() %>%
+  enframe(value = "snpID") %>%
+  dplyr::select(snpID) %>%
+  left_join(snps) %>%
+  arrange(chromosome, position) %>%
+  dplyr::select(chromosome, position, snpID) %>%
+  makeGRangesFromDataFrame(
+    keep.extra.columns = TRUE,
+    seqnames.field = "chromosome", 
+    start.field = "position", 
+    end.field = "position", 
+    seqinfo = seqinfo(ensGenes)) %>%
+  join_overlap_inner(
+    ensGenes,
+    maxgap = 4e4
+  )
+```
+
+```{r allSnpsGR}
+allSnpsGR <- snps %>%
+  dplyr::select(chromosome, position, snpID) %>%
+  makeGRangesFromDataFrame(
+    keep.extra.columns = TRUE,
+    seqnames.field = "chromosome", 
+    start.field = "position", 
+    end.field = "position", 
+    seqinfo = seqinfo(ensGenes)) %>%
+  join_overlap_inner(
+    ensGenes,
+    maxgap = 4e4
+  )
+```
+
+```{r bm}
+bm <- file.path("..", "external", "gene2GO_biomart.tsv.gz") %>%
+  gzfile() %>%
+  read_tsv() %>%
+  dplyr::filter(!is.na(`GO domain`)) %>%
+  dplyr::rename(gene_id = `Gene stable ID`,
+         ontology = `GO domain`,
+         go_id = `GO term accession`,
+         go_term = `GO term name`)
+```
+
+```{r snp2GO}
+snp2GO <- allSnpsGR %>% 
+  mcols() %>% 
+  as.data.frame() %>% 
+  dplyr::select(snpID, gene_id, Name) %>% 
+  as_tibble() %>% 
+  left_join(bm) %>%
+  distinct(snpID, go_id, .keep_all = TRUE)
+```
+
+```{r sigSnpGo}
+sigSnpGo <- sigSnpGR %>%
+  mcols() %>%
+  as.data.frame() %>%
+  dplyr::select(snpID) %>%
+  left_join(snp2GO) %>%
+  dplyr::filter(!is.na(go_id))
+```
+
+```{r goRes}
+nSnps <- snp2GO$snpID %>%
+  unique() %>%
+  length()
+nSig <- sigSnpGo$snpID %>%
+  unique() %>%
+  length()
+goRes <- sigSnpGo$go_id %>%
+  unique() %>%
+  lapply(function(x){
+    tibble(go_id = x,
+           N = snp2GO %>%
+             dplyr::filter(go_id == x) %>%
+             distinct(snpID) %>%
+             nrow(),
+           Sig = sigSnpGo %>%
+             dplyr::filter(go_id == x) %>%
+             distinct(snpID) %>%
+             nrow(),
+           Expected = nSig * N / nSnps) %>%
+      mutate(p = c(nSig - Sig, Sig, nSnps - nSig - N, N) %>%
+               matrix(nrow = 2) %>%
+               fisher.test() %>%
+               .[["p.value"]])
+  }) %>%
+  bind_rows() %>%
+  mutate(adjP = p.adjust(p, "bonferroni"),
+         FDR = p.adjust(p, "fdr"),
+         Ontology = Ontology(go_id),
+         Term = Term(go_id)) %>%
+  arrange(p) %>%
+  dplyr::filter(FDR < 0.05)
+```
+
+
+```{r, echo=FALSE}
+sigSnpGo %>% 
+  group_by(go_id) %>% 
+  summarise(
+    snps = list(unique(snpID)), 
+    genes = list(unique(Name))
+  ) %>%
+  right_join(goRes) %>%
+  dplyr::select(go_id, Ontology, Term, N, Sig, Expected, p, adjP, FDR, snps, genes) %>%
+  as.data.frame() %>%
+  mutate(go_id = str_replace(go_id, ":", "\\\\:"),
+         snps = vapply(snps,
+                       function(x){
+                         unlist(paste(x, collapse= ", "))
+                       }, character(1)),
+         genes = vapply(genes, 
+                        function(x){
+                          unlist(paste(x, collapse = ", "))
+                        }, character(1))) %>%
+  pander(split.tables = Inf,
+         caption = "*Enriched GO terms amongst the SNPs putatively under selection.*")
+```
+
 
 ## Session Information
 
