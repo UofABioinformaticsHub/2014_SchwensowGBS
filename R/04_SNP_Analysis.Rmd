@@ -973,6 +973,76 @@ sigSnpGo %>%
          caption = "*Enriched GO terms amongst the SNPs putatively under selection.*")
 ```
 
+## Linkage
+
+Linkage was calculated for each chromosome separately.
+Testing is on Chr1
+
+```{r}
+gdsFile <- seqOpen(gdsPath)
+seqSetFilterChrom(gdsFile, include = 1)
+allIDs <- tibble(
+  variant.id = seqGetData(gdsFile, "variant.id"),
+  chromosome = seqGetData(gdsFile, "chromosome"),
+  position = seqGetData(gdsFile, "position")
+)
+seqResetFilter(gdsFile)
+```
+
+```{r}
+ld <- snpgdsLDMat(
+  gdsobj = gdsFile, 
+  sample.id = filter(sampleID, Population != 2010)$Sample,
+  snp.id = allIDs$variant.id,
+  slide = 0,
+  num.thread = mc,
+  with.id = TRUE)
+ldByDist <- ld$LD %>%
+  .[lower.tri(.)] %>%
+  enframe(value = "LD") %>%
+  dplyr::select(LD) %>%
+  cbind(
+    ld$snp.id %>%
+      combn(2) %>%
+      t() %>%
+      set_colnames(c("ID1", "ID2"))
+  ) %>%
+  as_tibble() %>%
+  left_join(allIDs %>% dplyr::select(ID1 = variant.id, Pos1 = position)) %>%
+  left_join(allIDs %>% dplyr::select(ID2 = variant.id, Pos2 = position)) %>%
+  mutate(bp = Pos2 - Pos1) %>%
+  dplyr::filter(!is.na(LD))
+```
+
+```{r, fig.cap = "Example Linkage using Chr1. The smoothed line is plotted using a generalised additive model. Linkage appears limited to distances below 100kb"}
+ldByDist %>%
+  sample_n(1e6) %>%
+  ggplot(aes(bp / 1e3, LD^2)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth() +
+  geom_vline(xintercept = 100, colour = "red", linetype = 2) +
+  labs(x = "kb",
+       y = expression(r^2)) +
+  scale_x_continuous(labels = comma)
+```
+
+
+```{r, fig.cap = "Zoomed in linkage for Chr1 and distances < 1Mb"}
+ldByDist %>%
+  filter(bp < 1e6) %>%
+  ggplot(aes(bp / 1e3, LD^2)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth() +
+  geom_vline(xintercept = 100, colour = "red", linetype = 2) +
+  labs(x = "kb",
+       y = expression(r^2)) 
+```
+
+
+```{r}
+seqClose(gdsFile)
+```
+
 
 ## Session Information
 
