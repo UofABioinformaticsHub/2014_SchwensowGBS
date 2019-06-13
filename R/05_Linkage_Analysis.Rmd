@@ -1,0 +1,180 @@
+---
+title: "Linkage Analysis"
+author: "Steve Pederson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_document: 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 10
+    toc: yes
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE, warning = FALSE,
+                      fig.align = "center")
+```
+
+
+```{r loadPackages}
+library(SeqArray)
+library(SNPRelate)
+library(pander)
+library(scales)
+library(magrittr)
+library(tidyverse)
+library(parallel)
+```
+
+```{r here, echo=FALSE}
+if (interactive()) here::here("R") %>% setwd()
+```
+
+```{r setOptions}
+theme_set(theme_bw())
+panderOptions('big.mark', ",")
+panderOptions('table.style', "rmarkdown")
+panderOptions('table.split.table', Inf)
+panderOptions("missing", "")
+mc <- min(12, detectCores() - 1)
+```
+
+## Linkage Analysis
+
+```{r loadGDS}
+gdsPath <- file.path("..", "5_stacks", "gds", "populations.snps.gds")
+gdsFile <- seqOpen(gdsPath, readonly = TRUE)
+```
+
+```{r sampleID}
+sampleID <- tibble(
+    Sample = seqGetData(gdsFile, "sample.annotation/Sample"),
+    Population = seqGetData(gdsFile, "sample.annotation/Population"),
+    Location = seqGetData(gdsFile, "sample.annotation/Location")
+) %>%
+    filter(Population != 2010)
+```
+
+Autosomal SNP IDs for the 1996 and 2012 samples were loaded.
+
+```{r snps}
+seqSetFilterChrom(gdsFile, include = 1:22)
+seqSetFilter(gdsFile, sample.id = sampleID$Sample)
+snps <- tibble(
+    variant.id = seqGetData(gdsFile, "variant.id") ,
+    chromosome = seqGetData(gdsFile, "chromosome"),
+    position = seqGetData(gdsFile, "position"),
+    snpID = seqGetData(gdsFile, "annotation/id"),
+    N = seqGetData(gdsFile, "genotype") %>% 
+        apply(3, colSums) %>% 
+        apply(2, function(x){sum(!is.na(x))}) 
+) %>%
+    mutate(snpID = str_remove(snpID, ":.$"),
+           snpID = str_replace(snpID, ":", "_")) %>%
+    separate(snpID, into = c("Locus ID", "Col"), remove = FALSE) %>%
+    mutate_at(vars(`Locus ID`, Col), as.integer) %>%
+    mutate(Col = Col - 1,
+           snpID = paste(`Locus ID`, Col, sep = "_")) 
+seqResetFilter(gdsFile)
+```
+
+To define the SNPs used for estimation of Linkage Decay, select the 10,000 autosomal SBPs identified in the highest number of idividuals.
+Here this was set as SNPs identified in >95% of individuals (i.e. > 104).
+For simpler plotting and estimation of decay, only SNPs < 1Mb apart were retained.
+
+
+```{r allLD, results='hide'}
+seqSetFilter(gdsFile, sample.id = sampleID$Sample)
+allLD <- snps %>% 
+  filter(N >= 105) %>% # Only the SNPs identified in > 95% of samples
+  arrange(chromosome, position) %>%
+  split(f = .$chromosome) %>%
+  lapply(function(x){
+    chr <- unique(x$chromosome)
+    # Obtain the LD matrix
+    ld <- snpgdsLDMat(
+      gdsobj = gdsFile, 
+      snp.id = x$variant.id,
+      slide = 0,
+      num.thread = mc,
+      with.id = TRUE)
+    ld$LD %>%
+    .[lower.tri(.)] %>%
+    enframe(value = "LD") %>%
+    dplyr::select(LD) %>%
+    cbind(
+      x$variant.id %>%
+        combn(2) %>%
+        t() %>%
+        set_colnames(c("ID1", "ID2"))
+    ) %>%
+    as_tibble() %>%
+    left_join(x %>% dplyr::select(ID1 = variant.id, Pos1 = position)) %>%
+    left_join(x %>% dplyr::select(ID2 = variant.id, Pos2 = position)) %>%
+    mutate(bp = Pos2 - Pos1,
+           chromosome = chr) %>%
+    dplyr::filter(!is.na(LD),bp < 1e6)
+  }) %>%
+  bind_rows()
+seqResetFilter(gdsFile)
+```
+
+A function was then defined to fit Hill & Weir's linkage decay equation using a non-linear fit.
+
+```{r hwDecay}
+hwDecay <- function(d, r2, n = nrow(sampleID), k = 1e3){
+  st <- c(C = 0.1)
+  fit <- nls(
+    r2 ~ ((10 + C*d) / ((2 + C*d)*(11 + C*d))) *
+      (1 +((3 + C*d)*(12 + 12*C*d + (C*d)^2)) / (n*(2 + C*d)*(11 + C*d))),
+    start = st,
+    control = nls.control(maxiter = 100)
+  )
+  rho <- summary(fit)$parameters[1]
+  x <- seq(0, max(d), length.out = k)
+  y <- ((10 + rho*x)/((2 + rho*x)*(11 + rho*x))) *
+    (1 + ((3 + rho*x)*(12 + 12*rho*x + (rho*x)^2)) / (n*(2 + rho*x)*(11 + rho*x)))
+  list(line = tibble(x = x, y = y),
+       fit = fit, 
+       rho = rho)
+}
+```
+
+```{r fitDecay}
+fitDecay <- allLD %>%
+  mutate(r2 = LD^2) %>%
+  with(hwDecay(bp, r2))
+```
+
+
+```{r, echo=FALSE, fig.cap = "Linkage decay for distances up to 1Mb. The Hill-Weir decay line is shown in blue as is the distance 40kb"}
+allLD %>%
+  ggplot(aes(bp / 1e3, LD^2)) +
+  geom_point(alpha = 0.1) +
+  geom_line(aes(x / 1e3, y), data = fitDecay$line,
+            colour = "blue") +
+  geom_vline(xintercept = 40, colour = "blue", linetype = 2) +
+  labs(x = "Distance (Kb)", y = expression(r^2)) +
+  scale_x_continuous(
+    expand = expand_scale(0.02), 
+    breaks = c(40, seq(0, 1e3, by = 200)), 
+    minor_breaks = seq(0, 1e3, by = 100)
+    ) +
+  theme(axis.title.y = element_text(angle = 0, hjust = 0.5, vjust = 0.5),
+        text = element_text(size = 14))
+```
+
+
+```{r closeGds}
+seqClose(gdsFile)
+```
+
+
+# Session Info
+
+```{r sessionInfo}
+sessionInfo() %>% pander()
+```
+
