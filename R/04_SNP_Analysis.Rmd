@@ -37,7 +37,14 @@ library(ggrepel)
 library(plyranges)
 library(rtracklayer)
 library(AnnotationDbi)
+library(GO.db)
 ```
+
+
+```{r here, echo=FALSE}
+if (interactive()) here::here("R") %>% setwd()
+```
+
 
 ```{r otherParams}
 theme_set(theme_bw())
@@ -842,33 +849,42 @@ list(
   grid.draw()
 ```
 
+```{r}
+sigSnps <- c(
+  filter(alleleResults, FDR < 0.05)$snpID,
+  filter(genotypeResults, FDR < 0.05)$snpID
+) %>%
+  unique()
+```
+
+
 ## Enrichment testing
 
-SNPs were mapped to GO terms and tested for enrichment.
-In order to avoid double counting, GO terms were mapped to each SNP so that if multiple genes were within a given distance of a SNP, only one set of GO terms would be tested for that SNP.
-
-```{r sigSnpGR}
-sigSnpGR <- c(
-  dplyr::filter(genotypeResults, FDR < alpha)$snpID,
-  dplyr::filter(alleleResults, FDR < alpha)$snpID
-) %>%
-  unique() %>%
-  enframe(value = "snpID") %>%
-  dplyr::select(snpID) %>%
-  left_join(snps) %>%
-  arrange(chromosome, position) %>%
-  dplyr::select(chromosome, position, snpID) %>%
-  makeGRangesFromDataFrame(
-    keep.extra.columns = TRUE,
-    seqnames.field = "chromosome", 
-    start.field = "position", 
-    end.field = "position", 
-    seqinfo = seqinfo(ensGenes)) %>%
-  join_overlap_inner(
-    ensGenes,
-    maxgap = 4e4
-  )
+```{r fullPaths}
+fullPaths <- list(
+  toTable(GOBPANCESTOR) %>% set_names(c("go_id", "ancestor")),
+  toTable(GOCCANCESTOR) %>% set_names(c("go_id", "ancestor")),
+  toTable(GOMFANCESTOR) %>% set_names(c("go_id", "ancestor"))
+) %>% 
+  bind_rows() %>%
+  dplyr::filter(!ancestor %in% c("all", "GO:0008150", "GO:0003674", "GO:0005575")) %>%
+  as_tibble() %>%
+  bind_rows(
+    tibble(
+      go_id = unique(.$go_id),
+      ancestor = unique(.$go_id)
+    )
+  ) %>%
+  arrange(go_id, ancestor)
 ```
+
+```{r goSummaries}
+goSummaries <- url("https://uofabioinformaticshub.github.io/summaries2GO/data/goSummaries.RDS") %>%
+  readRDS() %>%
+  dplyr::rename(go_id = id)
+```
+
+### GO Analysis By Gene
 
 ```{r allSnpsGR}
 allSnpsGR <- snps %>%
@@ -885,6 +901,26 @@ allSnpsGR <- snps %>%
   )
 ```
 
+```{r}
+sigSnpGR <- allSnpsGR %>%
+  subset(snpID %in% sigSnps)
+```
+
+
+```{r nGenes}
+nGenes <- allSnpsGR$gene_id %>%
+  unique() %>%
+  length()
+nSigGenes <- sigSnpGR$gene_id %>%
+  unique() %>%
+  length()
+```
+
+`r nGenes` genes were identified as being within 40kb of a SNP.
+Of the `r length(unique(sigSnpGR$snpID))` candidate SNPs `r nSigGenes` genes were identified as being within 40kb, and these were analysed for enrichment of any GO terms.
+
+Mappings from genes to GO terms were downloaded manually from the biomart server at www.ensembl.org.
+
 ```{r bm}
 bm <- file.path("..", "external", "gene2GO_biomart.tsv.gz") %>%
   gzfile() %>%
@@ -893,172 +929,49 @@ bm <- file.path("..", "external", "gene2GO_biomart.tsv.gz") %>%
   dplyr::rename(gene_id = `Gene stable ID`,
          ontology = `GO domain`,
          go_id = `GO term accession`,
-         go_term = `GO term name`)
+         go_term = `GO term name`) %>%
+  dplyr::filter(gene_id %in% allSnpsGR$gene_id) %>%
+  left_join(fullPaths) %>%
+  dplyr::select(gene_id, go_id = ancestor) %>%
+  distinct(gene_id, go_id)
 ```
 
-```{r snp2GO}
-snp2GO <- allSnpsGR %>% 
-  mcols() %>% 
-  as.data.frame() %>% 
-  dplyr::select(snpID, gene_id, Name) %>% 
-  as_tibble() %>% 
-  left_join(bm) %>%
-  distinct(snpID, go_id, .keep_all = TRUE)
-```
+Complete paths of GO terms back to ontology roots were obtained for each gene.
+The minimum number of steps back to the ontology roots were also obtained for each GO ID.
 
-```{r sigSnpGo}
-sigSnpGo <- sigSnpGR %>%
-  mcols() %>%
-  as.data.frame() %>%
-  dplyr::select(snpID) %>%
-  left_join(snp2GO) %>%
-  dplyr::filter(!is.na(go_id))
-```
 
-```{r goRes}
-nSnps <- snp2GO$snpID %>%
-  unique() %>%
-  length()
-nSig <- sigSnpGo$snpID %>%
-  unique() %>%
-  length()
-goRes <- sigSnpGo$go_id %>%
-  unique() %>%
-  lapply(function(x){
-    tibble(go_id = x,
-           N = snp2GO %>%
-             dplyr::filter(go_id == x) %>%
-             distinct(snpID) %>%
-             nrow(),
-           Sig = sigSnpGo %>%
-             dplyr::filter(go_id == x) %>%
-             distinct(snpID) %>%
-             nrow(),
-           Expected = nSig * N / nSnps) %>%
-      mutate(p = c(nSig - Sig, Sig, nSnps - nSig - N, N) %>%
-               matrix(nrow = 2) %>%
-               fisher.test() %>%
-               .[["p.value"]])
-  }) %>%
+```{r}
+goRes <- bm %>%
+  mutate(inSig = gene_id %in% sigSnpGR$gene_id) %>%
+  group_by(go_id) %>%
+  summarise(N = dplyr::n(), 
+            nSig = sum(inSig)) %>%
+  left_join(goSummaries) %>%
+  filter(nSig > 0, shortest_path > 2) %>%
+  distinct(go_id, .keep_all = TRUE) %>%
+  split(f = .$go_id) %>%
+  mclapply(function(x){
+    ft <- matrix(
+      c(nSigGenes - x$nSig, x$nSig, nGenes - nSigGenes - x$N, x$N),
+      nrow = 2, byrow = TRUE) %>%
+      fisher.test()
+    mutate(x, p = ft$p.value)
+  }, mc.cores = mc) %>%
   bind_rows() %>%
-  mutate(adjP = p.adjust(p, "bonferroni"),
+  mutate(Expected = nSigGenes * N / nGenes,
          FDR = p.adjust(p, "fdr"),
-         Ontology = Ontology(go_id),
-         Term = Term(go_id)) %>%
-  arrange(p) %>%
-  dplyr::filter(FDR < 0.05)
-```
-
-
-```{r, echo=FALSE}
-sigSnpGo %>% 
-  group_by(go_id) %>% 
-  summarise(
-    snps = list(unique(snpID)), 
-    genes = list(unique(Name))
-  ) %>%
-  right_join(goRes) %>%
-  dplyr::select(go_id, Ontology, Term, N, Sig, Expected, p, adjP, FDR, snps, genes) %>%
-  as.data.frame() %>%
-  mutate(go_id = str_replace(go_id, ":", "\\\\:"),
-         snps = vapply(snps,
-                       function(x){
-                         unlist(paste(x, collapse= ", "))
-                       }, character(1)),
-         genes = vapply(genes, 
-                        function(x){
-                          unlist(paste(x, collapse = ", "))
-                        }, character(1))) %>%
-  pander(split.tables = Inf,
-         caption = "*Enriched GO terms amongst the SNPs putatively under selection.*")
-```
-
-## Linkage
-### Move to new markdown!!!
-
-Linkage was calculated for each chromosome separately.
-Testing is on Chr1
-
-```{r}
-gdsFile <- seqOpen(gdsPath)
+         adjP = p.adjust(p, "bonferroni"),
+         term = Term(go_id),
+         ontology = Ontology(go_id)) %>%
+  dplyr::select(go_id, term, ontology, N, nSig, Expected, p, adjP, FDR) %>%
+  arrange(p)
 ```
 
 
 ```{r}
-ldList <- list()
-for (i in 1:22){
-  # Restrict to each chromosome
-  seqSetFilterChrom(gdsFile, include = i)
-  # Get all the variants then sample 20% of them
-  allIDs <- tibble(
-    variant.id = seqGetData(gdsFile, "variant.id"),
-    chromosome = seqGetData(gdsFile, "chromosome"),
-    position = seqGetData(gdsFile, "position")
-  ) %>%
-    sample_n(floor(nrow(.) / 8))  %>%
-    arrange(chromosome, position)
-  # Reset to all chromosomes
-  seqResetFilter(gdsFile)
-  # Estimate the LD
-  ld <- snpgdsLDMat(
-    gdsobj = gdsFile, 
-    sample.id = filter(sampleID, Population != 2010)$Sample,
-    snp.id = allIDs$variant.id,
-    slide = 0,
-    num.thread = mc,
-    with.id = TRUE)
-  # Now add each data.frame to that list
-  ldList[[i]] <- ld$LD %>%
-    .[lower.tri(.)] %>%
-    enframe(value = "LD") %>%
-    dplyr::select(LD) %>%
-    cbind(
-      ld$snp.id %>%
-        combn(2) %>%
-        t() %>%
-        set_colnames(c("ID1", "ID2"))
-    ) %>%
-    as_tibble() %>%
-    left_join(allIDs %>% dplyr::select(ID1 = variant.id, Pos1 = position)) %>%
-    left_join(allIDs %>% dplyr::select(ID2 = variant.id, Pos2 = position)) %>%
-    mutate(bp = Pos2 - Pos1) %>%
-    dplyr::filter(!is.na(LD),
-                  bp < 1e6)
-}
+head(goRes)
 ```
 
-```{r}
-ldList %<>% bind_rows()
-```
-
-```{r, fig.cap = "Example Linkage using Chr1. The smoothed line is plotted using a generalised additive model. Linkage appears limited to distances below 100kb"}
-ldByDist %>%
-  sample_n(1e6) %>%
-  ggplot(aes(bp / 1e3, LD^2)) +
-  geom_point(alpha = 0.2) +
-  geom_smooth() +
-  geom_vline(xintercept = 100, colour = "red", linetype = 2) +
-  labs(x = "kb",
-       y = expression(r^2)) +
-  scale_x_continuous(labels = comma)
-```
-
-
-```{r, fig.cap = "Zoomed in linkage for Chr1 and distances < 1Mb"}
-ldByDist %>%
-  filter(bp < 1e6) %>%
-  ggplot(aes(bp / 1e3, LD^2)) +
-  geom_point(alpha = 0.2) +
-  geom_smooth() +
-  geom_vline(xintercept = 100, colour = "red", linetype = 2) +
-  labs(x = "kb",
-       y = expression(r^2)) 
-```
-
-
-```{r}
-seqClose(gdsFile)
-```
 
 
 ## Session Information
