@@ -112,7 +112,7 @@ genotypes <- snps %>%
 seqResetFilter(gdsFile)
 ```
 
-- After loading the data from the previous section, an additional fitering step was performed, where SNPs were required to have a non-zero MAF in the initial 1996 population.
+- After loading the data from the previous section, an additional filtering step was performed, where SNPs were required to have a non-zero MAF in the initial 1996 population.
 
 ```{r snpIn1996}
 snpIn1996 <- genotypes %>% 
@@ -138,7 +138,7 @@ ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3
     .[,c("gene_id", "Name", "description")]
 ```
 
-The set of SNPs under invetigation was also defined as a GRanges object.
+The set of SNPs under investigation was also defined as a GRanges object.
 
 ```{r snpsGR}
 snpsGR <- makeGRangesFromDataFrame(
@@ -194,7 +194,7 @@ pca <- genotypes %>%
     prcomp( center = TRUE)
 ```
 
-As noted in the previous section sample samples `r pander(lowCall)` had a SNP identification rate $< 50$% and as such these were markd as potential outliers.
+As noted in the previous section sample samples `r pander(lowCall)` had a SNP identification rate $< 50$% and as such these were marked as potential outliers.
 Ignoring these samples, and restricting data to SNPs identified in $>95$% of all samples, a preliminary PCA was performed
 This amounted to `r comma(nrow(snp4PCA))` of the possible `r comma(length(unique(genotypes$variant.id)))` SNPs for analysis using PCA.
 Missing values were specified as the mean MAF over all populations combined.
@@ -799,7 +799,7 @@ alleleResults %>%
 
 ### Analysis Using the FLK model
 
-This was performed seperately and no SNPs of specific interest were detected. 
+This was performed separately and no SNPs of specific interest were detected. 
 
 ### Export of Data for Bayescan
 
@@ -835,15 +835,15 @@ bayRes <- read_csv("../external/BayOut_FDR5.csv") %>%
   mutate(variant.id = var2VCF[ID])
 ```
 
-```{r plotVenn, echo=FALSE, fig.cap = "*Summary of results from all three methods, using an FDR of 0.05 for each approach*"}
+```{r plotVenn, echo=FALSE, fig.cap = "*Summary of results from all three methods, using an FDR of 0.05 for each approach. All SNPs detected under Bayescan were identified using Fisher's Exact Test for both allele and genotype analysis*"}
 grid.newpage()
 list(
-  genotype = dplyr::filter(genotypeResults, FDR < alpha)$variant.id,
-  allele = alleleResults %>%
+  Genotype = dplyr::filter(genotypeResults, FDR < alpha)$variant.id,
+  Allele = alleleResults %>%
     left_join(snps) %>%
     dplyr::filter(FDR < alpha) %>%
     .[["variant.id"]],
-  bayescan = bayRes$variant.id
+  Bayescan = bayRes$variant.id
 ) %>% 
  VennDiagram::venn.diagram(filename = NULL) %>%
   grid.draw()
@@ -886,6 +886,12 @@ goSummaries <- url("https://uofabioinformaticshub.github.io/summaries2GO/data/go
 
 ### GO Analysis By Gene
 
+```{r dist}
+dist <- 40000
+```
+
+For the initial GO analysis, any gene within `r dist/1000`kb of a SNP considered as significant were tested for any enrichment of biological characteristics.
+
 ```{r allSnpsGR}
 allSnpsGR <- snps %>%
   dplyr::select(chromosome, position, snpID) %>%
@@ -897,11 +903,11 @@ allSnpsGR <- snps %>%
     seqinfo = seqinfo(ensGenes)) %>%
   join_overlap_inner(
     ensGenes,
-    maxgap = 4e4
+    maxgap = dist
   )
 ```
 
-```{r}
+```{r sigSnpGR}
 sigSnpGR <- allSnpsGR %>%
   subset(snpID %in% sigSnps)
 ```
@@ -916,7 +922,7 @@ nSigGenes <- sigSnpGR$gene_id %>%
   length()
 ```
 
-`r nGenes` genes were identified as being within 40kb of a SNP.
+`r nGenes` genes were identified as being within `r dist/1000`kb of a SNP.
 Of the `r length(unique(sigSnpGR$snpID))` candidate SNPs `r nSigGenes` genes were identified as being within 40kb, and these were analysed for enrichment of any GO terms.
 
 Mappings from genes to GO terms were downloaded manually from the biomart server at www.ensembl.org.
@@ -933,14 +939,15 @@ bm <- file.path("..", "external", "gene2GO_biomart.tsv.gz") %>%
   dplyr::filter(gene_id %in% allSnpsGR$gene_id) %>%
   left_join(fullPaths) %>%
   dplyr::select(gene_id, go_id = ancestor) %>%
-  distinct(gene_id, go_id)
+  distinct(gene_id, go_id) %>%
+  dplyr::filter(!is.na(go_id))
 ```
 
 Complete paths of GO terms back to ontology roots were obtained for each gene.
 The minimum number of steps back to the ontology roots were also obtained for each GO ID.
 
 
-```{r}
+```{r goRes}
 goRes <- bm %>%
   mutate(inSig = gene_id %in% sigSnpGR$gene_id) %>%
   group_by(go_id) %>%
@@ -969,14 +976,233 @@ goRes <- bm %>%
 
 
 ```{r}
-head(goRes)
+goRes %>%
+  dplyr::filter(FDR == min(FDR), nSig > 1) %>%
+  mutate(Term = Term(go_id),
+         Genes  = vapply(go_id, function(x){
+           subset(sigSnpGR, gene_id %in% I(
+             dplyr::filter(bm, go_id == x) %>%
+               .[["gene_id"]]))$Name %>%
+             sort() %>%
+             unique() %>%
+             paste(collapse = ", ")
+         }, character(1))) %>%
+  dplyr::select(ID = go_id, Ontology = ontology, Term, Total = N, Sig = nSig, Expected, p, FDR, Genes) %>%
+  mutate(ID = gsub(":", "\\\\:", ID),
+         Expected = round(Expected, 3),
+         p = round(p, 4),
+         FDR = round(FDR, 3)) %>%
+  distinct(Ontology, Genes, .keep_all = TRUE) %>%
+  pander(split.tables = Inf, style = "rmarkdown", 
+         justify = "lllrrrrrl",
+         caption = paste("Most highly ranked GO terms.", 
+                         "Where multiple terms resulted from the identical combination of genes, only the most highly ranked terms is shown.",
+                         "Overall, this corresponds to an FDR of", 
+                         percent(max(.$FDR))))
 ```
 
+## Meta Analysis With Previous Paper
+
+The results in the Turretfield population from the paper [*Resistance to RHD virus in wild Australia rabbits: Comparison of susceptible and resistant individuals using a genomewide approach*](https://doi.org/10.1111/mec.14228) were then compared to these results.
+In this previous analysis, results were generated by using Fisher's Exact Test to test genotypes for association with RHDV susceptibility or resistance.
+
+```{r tf, cache=TRUE}
+tfGR <- url("https://raw.githubusercontent.com/hdetering/orycun/master/results/filteredSNPScores.csv") %>% 
+  read_csv() %>%
+  distinct(min_snp, .keep_all = TRUE) %>%
+  dplyr::select(chromosome = chr_name, pos, snpID = min_snp, p, FDR) %>%
+  mutate(chromosome = gsub("^chr", "", chromosome)) %>%
+  makeGRangesFromDataFrame(
+    keep.extra.columns = TRUE,
+    ignore.strand = TRUE, 
+    seqinfo = seqinfo(ensGenes),
+    seqnames.field = "chromosome", 
+    start.field = "pos", 
+    end.field = "pos") %>%
+  sort()
+```
+
+Of the `r comma(length(tfGR))` unique SNPs contained in the previous dataset, only `r tfGR %>% find_overlaps(allSnpsGR) %>% reduce() %>% length() %>% comma()` were also identified in the current dataset.
+A meta-analysis was performed on these SNPs using the results from both separate analyses which used Fisher's Exact Test on genotypes.
+In this approach, Fisher's method was used to combine p-values, and resultant p-values were drawn from a $chi^2$ distribution with 4 degrees of freedom (i.e. $2k$).
+
+```{r combinedResults}
+combinedResults <- tfGR %>%
+  find_overlaps(allSnpsGR) %>%
+  mcols() %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  dplyr::select(snpID = snpID.y, tf.p = p) %>%
+  distinct(snpID, .keep_all = TRUE) %>%
+  left_join(
+    genotypeResults %>%
+      dplyr::select(snpID, chromosome, position, geno.p = p)) %>% 
+  mutate(
+    X = -2*(log(tf.p) + log(geno.p)), 
+    p = pchisq(X, 4, lower.tail = FALSE), 
+    adjP = p.adjust(p, "bonferroni"),
+    FDR = p.adjust(p, "fdr")) %>% 
+  arrange(p) 
+```
+
+Using Bonferroni's adjustment to control the FWER at 0.05 gave `r nrow(filter(combinedResults, adjP < 0.05))` candidate SNPs, whilst using the more relaxed criterion of an FDR < 0.05 gave `r nrow(filter(combinedResults, FDR < 0.05))` candidate SNPs.
+
+```{r, echo=FALSE}
+combinedResults %>%
+  dplyr::filter(FDR < 0.05) %>%
+  dplyr::select(snpID,
+                Chromosome = chromosome, 
+                Position = position,
+                p, adjP, FDR) %>%
+  pander(justify = "lrrrrr",
+         caption = "Significant SNPs from the meta-analysis using the previous published results from a separate population.")
+```
+
+
+```{r, echo=FALSE}
+allSnpsGR %>% 
+  subset(snpID %in% dplyr::filter(combinedResults, FDR < 0.05)$snpID) %>%
+  subset(!is.na(Name)) %>% 
+  as.data.frame() %>%
+  dplyr::select(snpID, 
+                Chromosome = seqnames,
+                BP = start, 
+                ID = gene_id,
+                Name,
+                Description = description) %>%
+  mutate(Description = str_remove(Description, " \\[Source.+")) %>%
+  pander(style = "rmarkdown", split.table = Inf, justify = "lrrlll",
+         caption = paste0(
+           "Genes within ", dist / 1000, "kb of SNPs identified in the meta-analysis."))
+```
+
+```{r, echo=FALSE, fig.cap="Comparison of p-values for SNPs detected in both analyses, with thos considered as significant after meta-analysis shown in red."}
+combinedResults %>%
+  mutate(Sig = FDR < 0.05) %>%
+  ggplot(aes(-log10(geno.p), -log10(tf.p), colour = Sig)) +
+  geom_point() +
+  geom_abline(slope =1, intercept = 0, linetype = 2, colour = "blue") +
+  geom_text_repel(aes(label = snpID),
+                  data = . %>% filter(Sig)) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(x = expression(paste(-log[10], "p (Genotype Analysis)")),
+       y = expression(paste(-log[10], "p (Previous Analysis)"))) +
+  theme(legend.position = "none")
+```
+
+
+```{r, echo=FALSE, fig.cap = "Allele distributions in the 1996 and 2012 populations for SNPs identified under the meta-analysis."}
+combinedResults %>%
+  dplyr::filter(FDR < 0.05) %>%
+  dplyr::select(snpID) %>%
+  left_join(genotypes) %>%
+  filter(Population != 2010,
+         !variant.id %in% regionSNPs$variant.id) %>%
+  mutate(Genotype = as.factor(Genotype),
+         Population = as.factor(Population)) %>%
+    ggplot(aes(Genotype, fill = Population)) + 
+    geom_bar(position = position_dodge2(preserve = "single")) + 
+    facet_wrap(~snpID, drop = FALSE) + 
+    scale_fill_manual(values = c("black", "blue")) +
+    labs(y = "Count") + 
+    theme(
+        legend.direction = "horizontal", 
+        legend.position = c(0.75, 0.05)
+    )
+```
+
+
+### GO Enrichment
+
+This list was also used to test for GO enrichment.
+
+```{r setupMetaGO}
+sigSnpGR <- allSnpsGR %>%
+  subset(snpID %in% filter(combinedResults, FDR < 0.05)$snpID)
+nGenes <- allSnpsGR %>%
+  subset(snpID %in% combinedResults$snpID) %>%
+  unique() %>%
+  length()
+nSigGenes <- sigSnpGR$gene_id %>%
+  unique() %>%
+  length()
+```
+
+```{r combinedGoRes}
+combinedGoRes <- bm %>%
+  dplyr::filter(
+    gene_id %in% subset(allSnpsGR, snpID %in% combinedResults$snpID)$gene_id) %>%
+  mutate(inSig = gene_id %in% sigSnpGR$gene_id) %>%
+  group_by(go_id) %>%
+  summarise(N = dplyr::n(), 
+            nSig = sum(inSig)) %>%
+  left_join(goSummaries) %>%
+  filter(nSig > 0, shortest_path > 2) %>%
+  distinct(go_id, .keep_all = TRUE) %>%
+  split(f = .$go_id) %>%
+  mclapply(function(x){
+    ft <- matrix(
+      c(nSigGenes - x$nSig, x$nSig, nGenes - nSigGenes - x$N, x$N),
+      nrow = 2, byrow = TRUE) %>%
+      fisher.test()
+    mutate(x, p = ft$p.value)
+  }, mc.cores = mc) %>%
+  bind_rows() %>%
+  mutate(Expected = nSigGenes * N / nGenes,
+         FDR = p.adjust(p, "fdr"),
+         adjP = p.adjust(p, "bonferroni"),
+         term = Term(go_id),
+         ontology = Ontology(go_id)) %>%
+  dplyr::select(go_id, term, ontology, shortest_path, N, nSig, Expected, p, adjP, FDR) %>%
+  arrange(p)
+```
+
+Inspection of the results revealed an enrichment for terms related to haemoglobin, however, as these genes are co-located this was revealed to be due to a single SNP with multiple haemoglobin genes within 40kb and can be disregarded. 
+
+```{r, echo=FALSE}
+combinedGoRes %>%
+  dplyr::filter(
+    nSig > Expected,
+    FDR < 0.05
+  ) %>%
+  mutate(Term = Term(go_id),
+         Genes  = vapply(go_id, function(x){
+           subset(sigSnpGR, gene_id %in% I(
+             dplyr::filter(bm, go_id == x) %>%
+               .[["gene_id"]]))$Name %>%
+             sort() %>%
+             unique() %>%
+             paste(collapse = ", ")
+         }, character(1)),
+         nSnps = vapply(go_id, function(x){
+           subset(sigSnpGR, gene_id %in% I(
+             dplyr::filter(bm, go_id == x) %>%
+               .[["gene_id"]]))$snpID %>%
+             unique() %>%
+             length()
+           }, integer(1))) %>%
+  dplyr::select(ID = go_id, Ontology = ontology, Term, Total = N, Sig = nSig, nSnps, Expected, p, FDR, Genes) %>%
+  mutate(ID = gsub(":", "\\\\:", ID),
+         Expected = round(Expected, 3),
+         p = round(p, 4),
+         FDR = round(FDR, 3)) %>%
+  distinct(Ontology, Genes, .keep_all = TRUE) %>%
+  pander(split.tables = Inf, style = "rmarkdown", 
+         justify = "lllrrrrrrl",
+         caption = paste("Most highly ranked GO terms for combined results.", 
+                         "Where multiple terms resulted from the identical combination of genes, only the most highly ranked terms is shown.",
+                         "Overall, this corresponds to an FDR of", 
+                         percent(max(.$FDR))))
+```
 
 
 ## Session Information
 
 ```{r sessionInfo, echo=FALSE, results='asis'}
 pander(sessionInfo()) 
+```
+
+```{r deleteVennLogs, echo=FALSE}
+list.files(pattern = "log$") %>% file.remove()
 ```
 

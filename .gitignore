@@ -15,3 +15,5 @@ slurm*
 QC/*
 rename/*
 5_stacks/*
+*cache*
+*files*
