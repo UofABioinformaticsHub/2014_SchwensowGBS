@@ -51,6 +51,7 @@ theme_set(theme_bw())
 panderOptions("missing", "")
 mc <- min(12, detectCores() - 1)
 alpha <- 0.05
+maxKb <- 40
 ```
 
 
@@ -152,11 +153,11 @@ snpsGR <- makeGRangesFromDataFrame(
 )
 ```
 
-This was intersected with the set of genes to connect SNPs to genes within 40kb.
+This was intersected with the set of genes to connect SNPs to genes within `r maxKb` kb.
 
 ```{r snp2Gene}
 snp2Gene <- snpsGR %>% 
-    resize(width = 199999) %>%
+    resize(width = 1000*maxKb/2 -1) %>%
     trim() %>%
     join_overlap_inner(ensGenes) 
 ```
@@ -887,7 +888,7 @@ goSummaries <- url("https://uofabioinformaticshub.github.io/summaries2GO/data/go
 ### GO Analysis By Gene
 
 ```{r dist}
-dist <- 40000
+dist <- 1000*maxKb
 ```
 
 For the initial GO analysis, any gene within `r dist/1000`kb of a SNP considered as significant were tested for any enrichment of biological characteristics.
@@ -923,7 +924,7 @@ nSigGenes <- sigSnpGR$gene_id %>%
 ```
 
 `r nGenes` genes were identified as being within `r dist/1000`kb of a SNP.
-Of the `r length(unique(sigSnpGR$snpID))` candidate SNPs `r nSigGenes` genes were identified as being within 40kb, and these were analysed for enrichment of any GO terms.
+For the `r length(unique(sigSnpGR$snpID))` candidate SNPs within this distance of a gene, `r nSigGenes` genes were identified, and these were analysed for enrichment of any GO terms.
 
 Mappings from genes to GO terms were downloaded manually from the biomart server at www.ensembl.org.
 
