@@ -830,11 +830,16 @@ seqClose(gdsFile)
 After running Bayescan, results were imported.
 Unfortunately, these results had IDs which were taken from the line in the above VCF and need to be converted back to IDs compatible with previous analysis.
 
-```{r bayRes}
-bayRes <- read_csv("../external/BayOut_FDR5.csv") %>%
-  dplyr::rename(ID = X1) %>%
+
+```{r}
+bayRes <- file.path("..", "external", "BayescanOut.txt.gz") %>%
+  gzfile() %>%
+  read_delim(delim = " ", col_names = FALSE, skip = 1, col_types = "innnnn-") %>%
+  set_colnames(c("ID", "prob","log10.PO.","qval","alpha","fst")) %>%
   mutate(variant.id = var2VCF[ID])
 ```
+
+
 
 ```{r plotVenn, echo=FALSE, fig.cap = "*Summary of results from all three methods, using an FDR of 0.05 for each approach. All SNPs detected under Bayescan were identified using Fisher's Exact Test for both allele and genotype analysis*"}
 grid.newpage()
@@ -844,7 +849,7 @@ list(
     left_join(snps) %>%
     dplyr::filter(FDR < alpha) %>%
     .[["variant.id"]],
-  Bayescan = bayRes$variant.id
+  Bayescan = dplyr::filter(bayRes, qval < 0.05)$variant.id
 ) %>% 
  VennDiagram::venn.diagram(filename = NULL) %>%
   grid.draw()
