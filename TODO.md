@@ -5,3 +5,4 @@
 - [] Add distances to SNPs in tables, and information about being within coding regions etc
 - [] Add table for Bayescan results
 - [] Export tables to csv
+- Simulation?
