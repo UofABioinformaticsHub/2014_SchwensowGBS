@@ -783,7 +783,16 @@ alleleResults <- genotypes %>%
   ) %>%
   mutate(
     FDR = p.adjust(p, "fdr"),
-    adjP = p.adjust(p, "bonferroni")
+    adjP = p.adjust(p, "bonferroni"),
+    # Make the MAF is relative to the 1996 population not the reference
+    MAF_2012 = case_when(
+      MAF_1996 > 0.5 ~ 1 - MAF_2012,
+      MAF_1996 <= 0.5 ~ MAF_2012
+    ),
+    MAF_1996 = case_when(
+      MAF_1996 > 0.5 ~ 1 - MAF_1996,
+      MAF_1996 <= 0.5 ~ MAF_1996
+    )
   ) %>%
   arrange(p) %>%
   left_join(
@@ -812,7 +821,11 @@ alleleResults %>%
       style = "rmarkdown",
       big.mark = ",",
       split.tables = Inf,
-      caption = paste("SNPs considered as significant when analysing by genotype using an FDR cutoff of", alpha)
+      caption = paste(
+        "SNPs considered as significant when analysing by genotype using an FDR cutoff of", 
+        percent(alpha),
+        "Minor allele frequencies are reported based on frequencies in the 1996 population."
+      )
     )
 ```
 
