@@ -92,24 +92,29 @@ snps <- tibble(
     position = seqGetData(gdsFile, "position"),
     snpID = seqGetData(gdsFile, "annotation/id")
 ) %>%
-    mutate(snpID = str_remove(snpID, ":.$"),
-           snpID = str_replace(snpID, ":", "_")) %>%
+    mutate(
+      snpID = str_remove(snpID, ":.$"),
+      snpID = str_replace(snpID, ":", "_")
+    ) %>%
     separate(snpID, into = c("Locus ID", "Col"), remove = FALSE) %>%
     mutate_at(vars(`Locus ID`, Col), as.integer) %>%
-    mutate(Col = Col - 1,
-           snpID = paste(`Locus ID`, Col, sep = "_")) %>%
-    right_join(keepSNPs)
+    mutate(
+      Col = Col - 1,
+      snpID = paste(`Locus ID`, Col, sep = "_")
+    ) %>%
+  right_join(keepSNPs)
 seqSetFilter(gdsFile, variant.id = snps$variant.id)
 genotypes <- snps %>%
-    cbind(seqGetData(gdsFile, "genotype") %>% 
-              apply(MARGIN = 3, colSums) %>%
-              t %>%
-              set_colnames(sampleID$Sample)) %>%
-    as_tibble() %>%
-    gather(Sample, Genotype, one_of(sampleID$Sample)) %>%
-    dplyr::filter(!is.na(Genotype)) %>%
-    arrange(variant.id, Sample) %>%
-    left_join(sampleID)
+    cbind(
+      seqGetData(gdsFile, "genotype") %>% 
+        apply(MARGIN = 3, colSums) %>%
+        t %>%
+        set_colnames(sampleID$Sample)) %>%
+  as_tibble() %>%
+  gather(Sample, Genotype, one_of(sampleID$Sample)) %>%
+  dplyr::filter(!is.na(Genotype)) %>%
+  arrange(variant.id, Sample) %>%
+  left_join(sampleID)
 seqResetFilter(gdsFile)
 ```
 
@@ -230,30 +235,38 @@ pca4Plot <- pca$x %>%
     group_by(Cluster) %>%
     mutate(maxY = max(Latitude, na.rm = TRUE)) %>%
     ungroup() %>%
-    mutate(Population = case_when(
+    mutate(
+      Population = case_when(
         Population == 1996 ~ "1996",
         Population == 2010 ~ "Outgroup (Turretfield)",
         maxY == max(maxY) ~ "2012 (Outer)",
         maxY != max(maxY) ~ "2012 (Central)"
-    )) %>%
-    left_join(genotypes %>% 
-                  filter(variant.id %in% snp4PCA$variant.id,
-                         !Sample %in% lowCall) %>% 
-                  group_by(Sample) %>% 
-                  tally() %>% 
-                  mutate(imputationRate = 1 - n / nrow(snp4PCA))) 
+      )
+    ) %>%
+  left_join(
+    genotypes %>% 
+      filter(variant.id %in% snp4PCA$variant.id, !Sample %in% lowCall) %>% 
+      group_by(Sample) %>% 
+      tally() %>% 
+      mutate(imputationRate = 1 - n / nrow(snp4PCA)
+      )
+  ) 
 pca4Plot %>%
     ggplot(aes(PC1, PC2, colour = Population, size = imputationRate)) +
     geom_point(alpha = 0.6) +
-    labs(x = paste0("PC1 (", percent(summary(pca)$importance[2,"PC1"]), ")"),
-         y = paste0("PC2 (", percent(summary(pca)$importance[2,"PC2"]), ")"),
-         size = "Imputation Rate") +
-    scale_colour_manual(values = popCols)
+    labs(
+      x = paste0("PC1 (", percent(summary(pca)$importance[2,"PC1"]), ")"),
+      y = paste0("PC2 (", percent(summary(pca)$importance[2,"PC2"]), ")"),
+      size = "Imputation Rate"
+    ) +
+  scale_colour_manual(values = popCols)
 ```
 
 ```{r mapParams}}
-loc <- c(range(sampleID$Longitude, na.rm = TRUE) %>% mean,
-         range(sampleID$Latitude, na.rm = TRUE) %>% mean)
+loc <- c(
+  range(sampleID$Longitude, na.rm = TRUE) %>% mean,
+  range(sampleID$Latitude, na.rm = TRUE) %>% mean
+)
 saPoly <- readRDS(file.path("..", "external", "saPoly.RDS"))
 roads <- readRDS(file.path("..", "external", "roads.RDS"))
 gc <- SpatialPoints(cbind(x = 138.655972, y = -31.200305))
@@ -262,10 +275,14 @@ xBreaks <- seq(138.65, 138.8, by = 0.05)
 xLabs <- parse(text = paste(xBreaks, "*degree ~ E", sep = ""))
 yBreaks <- seq(-31.2, -31.32, by = -0.04)
 yLabs <- parse(text = paste(-yBreaks, "*degree ~ S", sep = ""))
-leftN <- tibble(x = c(138.7965, 138.8, 138.8) - 0.01,
-                    y = c(-31.2, -31.198, -31.193))
-rightN <- tibble(x = c(138.8, 138.8, 138.8035) - 0.01,
-                     y = c(-31.193, -31.198, -31.2))
+leftN <- tibble(
+  x = c(138.7965, 138.8, 138.8) - 0.01,
+  y = c(-31.2, -31.198, -31.193)
+)
+rightN <- tibble(
+  x = c(138.8, 138.8, 138.8035) - 0.01,
+  y = c(-31.193, -31.198, -31.2)
+)
 ```
 
 ```{r mainPlot}
@@ -291,33 +308,46 @@ zoomPlot <- ggmap(ggMap, extent = "normal", maprange = FALSE) +
         data = subset(saPoly, F_CODE == "PARK"),
         aes(long, lat, group = group),
         fill = rgb(1, 1, 1, 0), colour = "grey10", size = 0.2) +
-    geom_point(
-        data= filter(pca4Plot, grepl("2012", Population)),
-        aes(Longitude, Latitude, colour = Population),
-        size = 0.9*ps) +
-    geom_polygon(aes(x, y), data = leftN, fill = "white", colour = "grey10", size = 0.4) +
-    geom_polygon(aes(x, y), data = rightN, fill = "grey10", colour = "grey10", size = 0.4) +
-    geom_text(x = 138.79, y = -31.19, label = "N", 
-              colour = "grey10", size = 4) +
-    scale_colour_manual(values = popCols[2:3]) +
-    coord_cartesian(xlim = c(138.618, 138.81),
-                    ylim = c(-31.335, -31.18),
-                    expand = 0) +
-    scale_x_continuous(breaks = xBreaks, labels = xLabs) +
-    scale_y_continuous(breaks = yBreaks, labels = yLabs) +
-    guides(colour = FALSE) +
-    ggsn::scalebar(x.min = 138.618, x.max = 138.81,
-                   y.min = -31.335, y.max = -31.18,
-                   transform = TRUE,
-                   dist = 2, dist_unit = "km",
-                   model = 'GRS80',
-                   height = 0.012, st.size = 4,
-                   location = 'bottomright',
-                   anchor = c(x = 138.8, y = -31.328)) +
-    labs(x = "Longitude",
-         y = "Latitude") +
-    theme(text = element_text(size = fs),
-          plot.margin = unit(c(1, 1, 1, 1), "mm"))
+  geom_point(
+    data= filter(pca4Plot, grepl("2012", Population)),
+    aes(Longitude, Latitude, colour = Population),
+    size = 0.9*ps) +
+  geom_polygon(
+    aes(x, y), data = leftN, fill = "white", colour = "grey10", size = 0.4
+  ) +
+  geom_polygon(
+    aes(x, y), data = rightN, fill = "grey10", colour = "grey10", size = 0.4
+  ) +
+  geom_text(
+    x = 138.79, y = -31.19, label = "N", colour = "grey10", size = 4
+  ) +
+  scale_colour_manual(values = popCols[2:3]) +
+  coord_cartesian(
+    xlim = c(138.618, 138.81),
+    ylim = c(-31.335, -31.18),
+    expand = 0
+  ) +
+  scale_x_continuous(breaks = xBreaks, labels = xLabs) +
+  scale_y_continuous(breaks = yBreaks, labels = yLabs) +
+  guides(colour = FALSE) +
+  ggsn::scalebar(
+    x.min = 138.618,
+    x.max = 138.81,
+    y.min = -31.335, 
+    y.max = -31.18,
+    transform = TRUE,
+    dist = 2, 
+    dist_unit = "km",
+    model = 'GRS80',
+    height = 0.012, 
+    st.size = 4,
+    location = 'bottomright',
+    anchor = c(x = 138.8, y = -31.328)) +
+  labs(x = "Longitude", y = "Latitude") +
+  theme(
+    text = element_text(size = fs),
+    plot.margin = unit(c(1, 1, 1, 1), "mm")
+  )
 ```
 
 
@@ -326,8 +356,11 @@ ausPolygon <- readRDS(file.path("..", "external", "ausPolygon.RDS"))
 ausPts <- SpatialPoints(cbind(x = loc[1], y = loc[2]))
 proj4string(ausPts) <- proj4string(ausPolygon)
 ausPlot <- ggplot() +
-  geom_polygon(data = ausPolygon, 
-               aes(long, lat, group = group), fill = "white", colour = "black") + 
+  geom_polygon(
+    data = ausPolygon, 
+    aes(long, lat, group = group),
+    fill = "white", colour = "black"
+  ) + 
   geom_point(data = as.data.frame(ausPts), aes(x, y), size = 1.5) +
   theme_void() +
   theme(plot.background = element_rect(fill = "white", colour = "black"))
@@ -362,47 +395,59 @@ xBreaks <- seq(138.74, 138.76, by = 0.01)
 xLabs <- parse(text = paste(xBreaks, "*degree ~ W", sep = ""))
 yBreaks <- seq(-31.235, -31.25, by = -0.005)
 yLabs <- parse(text = paste(-yBreaks, "*degree ~ S", sep = ""))
-central <- rbind(x = c(138.749, 138.755),
-                 y = c(-31.2365, -31.2495)) %>%
+central <- rbind(
+  x = c(138.749, 138.755),
+  y = c(-31.2365, -31.2495)
+) %>%
   set_colnames(c("min", "max"))
-leftN <- tibble(x = c(138.7595, 138.76, 138.76),
-                    y = c(-31.234, -31.2335, -31.2325))
-rightN <- tibble(x = c(138.76, 138.76, 138.7605),
-                     y = c(-31.2325, -31.2335, -31.234))
+leftN <- tibble(
+  x = c(138.7595, 138.76, 138.76),
+  y = c(-31.234, -31.2335, -31.2325)
+)
+rightN <- tibble(
+  x = c(138.76, 138.76, 138.7605),
+  y = c(-31.2325, -31.2335, -31.234)
+)
 get_map(zoomLoc, zoom = 15, maptype = "terrain", source = "google", color = "bw") %>%
-    ggmap() +
-    geom_jitter(
-        data = filter(pca4Plot, grepl("2012", Population)), 
-        aes(Longitude, Latitude, colour = Population), 
-        size = 3, width = 0.0005, height = 0) +
-    geom_rect(
-        xmin = central["x", "min"],
-        xmax = central["x", "max"],
-        ymin = central["y", "min"],
-        ymax = central["y", "max"],
-        fill = "red", alpha = 0.01, colour = "black") +
-    geom_polygon(aes(x, y), data = leftN, fill = "white", colour = "grey10", size = 0.4) +
-    geom_polygon(aes(x, y), data = rightN, fill = "grey10", colour = "grey10", size = 0.4) +
-    geom_text(x = 138.76, y = -31.232, label = "N", 
-              colour = "grey10", size = 5) +
-    scale_colour_manual(values = popCols[2:3]) +
-    scale_x_continuous(breaks = xBreaks, labels = xLabs) +
-    scale_y_continuous(breaks = yBreaks, labels = yLabs) +
-    theme_bw() +
-    guides(colour = FALSE) +
-    labs(x = "Longitude",
-         y = "Latitude") +
-    coord_cartesian(xlim = c(138.74, 138.762),
-                    ylim = c(-31.253, -31.231),
-                    expand = 0) +
-    ggsn::scalebar(
-        x.min = 138.74, x.max = 138.762, 
-        y.min = -31.253, y.max = -31.231,
-        transform = TRUE,
-        dist = 0.25, dist_unit = "km",, model = 'GRS80', 
-        height = 0.012, st.size = 4,
-        location = 'bottomright',
-        anchor = c(x = 138.761, y = -31.252)
+  ggmap() +
+  geom_jitter(
+    data = filter(pca4Plot, grepl("2012", Population)), 
+    aes(Longitude, Latitude, colour = Population), 
+    size = 3, width = 0.0005, height = 0) +
+  geom_rect(
+    xmin = central["x", "min"],
+    xmax = central["x", "max"],
+    ymin = central["y", "min"],
+    ymax = central["y", "max"],
+    fill = "red", alpha = 0.01, colour = "black") +
+  geom_polygon(
+    aes(x, y), data = leftN, fill = "white", colour = "grey10", size = 0.4
+  ) +
+  geom_polygon(
+    aes(x, y), data = rightN, fill = "grey10", colour = "grey10", size = 0.4
+  ) +
+  geom_text(
+    x = 138.76, y = -31.232, label = "N", colour = "grey10", size = 5
+  ) +
+  scale_colour_manual(values = popCols[2:3]) +
+  scale_x_continuous(breaks = xBreaks, labels = xLabs) +
+  scale_y_continuous(breaks = yBreaks, labels = yLabs) +
+  theme_bw() +
+  guides(colour = FALSE) +
+  labs(x = "Longitude", y = "Latitude") +
+  coord_cartesian(
+    xlim = c(138.74, 138.762),
+    ylim = c(-31.253, -31.231),
+    expand = 0
+  ) +
+  ggsn::scalebar(
+    x.min = 138.74, x.max = 138.762, 
+    y.min = -31.253, y.max = -31.231,
+    transform = TRUE,
+    dist = 0.25, dist_unit = "km",, model = 'GRS80', 
+    height = 0.012, st.size = 4,
+    location = 'bottomright',
+    anchor = c(x = 138.761, y = -31.252)
     )
 ```
 
@@ -419,9 +464,11 @@ In this way, any candidate SNPs obtained below will be less impacted by this str
 oraRegions <- pca4Plot %>% 
   filter(grepl("2012", Population)) %>% 
   rowwise() %>%
-  mutate(yCentral = cut(Latitude, breaks = central["y",], include.lowest = TRUE), 
-         xCentral = cut(Longitude, breaks = central["x",], include.lowest = TRUE),
-         Central = (is.na(yCentral) + is.na(xCentral)) == 0) %>%
+  mutate(
+    yCentral = cut(Latitude, breaks = central["y",], include.lowest = TRUE), 
+    xCentral = cut(Longitude, breaks = central["x",], include.lowest = TRUE),
+    Central = (is.na(yCentral) + is.na(xCentral)) == 0
+  ) %>%
   dplyr::select(Sample, Central) 
 ```
 
@@ -436,24 +483,27 @@ H<sub>A</sub>: An association exists between genotypes and collection region
 regionResults <- genotypes %>%
     filter(Population == 2012) %>%
     split(f = .$variant.id) %>%
-    mclapply(function(x){
+    mclapply(
+      function(x){
         ft <- list(p.value = NA)
         if (length(unique(x$Genotype)) > 1) {
-            ft <- x %>%
-                left_join(oraRegions) %>%
-                group_by(Genotype, Central) %>%
-                tally() %>%
-                spread(Genotype, n, fill = 0) %>%
-                column_to_rownames("Central") %>%
-                fisher.test()
+          ft <- x %>%
+            left_join(oraRegions) %>%
+            group_by(Genotype, Central) %>%
+            tally() %>%
+            spread(Genotype, n, fill = 0) %>%
+            column_to_rownames("Central") %>%
+            fisher.test()
         }
         x %>%
-            distinct(variant.id, snpID, chromosome, position) %>%
-            mutate(p = ft$p.value)
-    }, mc.cores = mc) %>%
-    bind_rows() %>%
-    filter(!is.na(p)) %>%
-    arrange(p)
+          distinct(variant.id, snpID, chromosome, position) %>%
+          mutate(p = ft$p.value)
+      }, 
+      mc.cores = mc
+    ) %>%
+  bind_rows() %>%
+  filter(!is.na(p)) %>%
+  arrange(p)
 ```
 
 
@@ -477,65 +527,72 @@ The previous structure noted in the data was no longer evident, and as such, the
 
 ```{r pcaPost}
 pcaPost <- genotypes %>%
-    filter(variant.id %in% snp4PCA$variant.id,
-           !variant.id %in% regionSNPs$variant.id) %>%
-    dplyr::select(variant.id, Sample, Genotype) %>%
-    spread(Sample, Genotype) %>%
-    as.data.frame() %>%
-    column_to_rownames("variant.id") %>%
-    as.matrix() %>%
-    apply(2, function(x){
-        x[is.na(x)] <- mean(x, na.rm = TRUE)
-        x
-    }) %>%
-    t() %>%
-    .[, apply(., 2, function(x){length(unique(x)) > 1})] %>%
-    prcomp( center = TRUE) 
+  filter(
+    variant.id %in% snp4PCA$variant.id,
+    !variant.id %in% regionSNPs$variant.id
+  ) %>%
+  dplyr::select(variant.id, Sample, Genotype) %>%
+  spread(Sample, Genotype) %>%
+  as.data.frame() %>%
+  column_to_rownames("variant.id") %>%
+  as.matrix() %>%
+  apply(2, function(x){
+    x[is.na(x)] <- mean(x, na.rm = TRUE)
+    x
+  }) %>%
+  t() %>%
+  .[, apply(., 2, function(x){length(unique(x)) > 1})] %>%
+  prcomp( center = TRUE) 
 pcaPost4Plot <- pcaPost$x %>%
-    as.data.frame() %>%
-    rownames_to_column("Sample") %>%
-    as_tibble() %>%
-    dplyr::select(Sample, PC1, PC2, PC3) %>%
-    left_join(sampleID) %>%
-    mutate(Cluster = kmeans(cbind(PC1, PC2, PC3), 3)$cluster) %>%
-    group_by(Cluster) %>%
-    mutate(maxY = max(Latitude, na.rm = TRUE)) %>%
-    ungroup() %>%
-    mutate(Population = case_when(
-        Population == 1996 ~ "1996",
-        Population == 2010 ~ "Outgroup (Turretfield)",
-        maxY == max(maxY) ~ "2012 (Outer)",
-        maxY != max(maxY) ~ "2012 (Central)"
-    )) %>%
-    left_join(genotypes %>% 
-                  filter(variant.id %in% snp4PCA$variant.id,
-                         !Sample %in% lowCall) %>% 
-                  group_by(Sample) %>% 
-                  tally() %>% 
-                  mutate(imputationRate = 1 - n / nrow(snp4PCA))) 
+  as.data.frame() %>%
+  rownames_to_column("Sample") %>%
+  as_tibble() %>%
+  dplyr::select(Sample, PC1, PC2, PC3) %>%
+  left_join(sampleID) %>%
+  mutate(Cluster = kmeans(cbind(PC1, PC2, PC3), 3)$cluster) %>%
+  group_by(Cluster) %>%
+  mutate(maxY = max(Latitude, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(
+    Population = case_when(
+      Population == 1996 ~ "1996",
+      Population == 2010 ~ "Outgroup (Turretfield)",
+      maxY == max(maxY) ~ "2012 (Outer)",
+      maxY != max(maxY) ~ "2012 (Central)"
+    )
+  ) %>%
+  left_join(
+    genotypes %>% 
+      filter(variant.id %in% snp4PCA$variant.id, !Sample %in% lowCall) %>% 
+      group_by(Sample) %>% 
+      tally() %>% 
+      mutate(imputationRate = 1 - n / nrow(snp4PCA))
+  ) 
 ```
 
 
 ```{r comparePCA, echo=FALSE, results='hide'}
 pdf(file.path("..", "figures", "Figure2.pdf"), height = h, width = w*1.8)
 bind_rows(
-    pca4Plot %>%
-        dplyr::select(Sample, PC1, PC2, Population) %>%
-        mutate(Status = "Pre"),
-    pcaPost4Plot %>%
-        dplyr::select(Sample, PC1, PC2, Population) %>%
-        mutate(Status = "Post")
+  pca4Plot %>%
+    dplyr::select(Sample, PC1, PC2, Population) %>%
+    mutate(Status = "Pre"),
+  pcaPost4Plot %>%
+    dplyr::select(Sample, PC1, PC2, Population) %>%
+    mutate(Status = "Post")
 ) %>%
-    left_join(oraRegions) %>%
-    mutate(Status = factor(Status, levels = c("Pre", "Post"))) %>%
-    ggplot(aes(PC1, PC2, colour = Population)) +
-    geom_point() +
-    facet_wrap(~Status) +
-    scale_colour_manual(values = popCols) +
-    theme(legend.position = "top",
-          text = element_text(size = fs*1.5),
-          strip.text = element_text(size = fs*1.4),
-          axis.title = element_text(size = fs*1.4))
+  left_join(oraRegions) %>%
+  mutate(Status = factor(Status, levels = c("Pre", "Post"))) %>%
+  ggplot(aes(PC1, PC2, colour = Population)) +
+  geom_point() +
+  facet_wrap(~Status) +
+  scale_colour_manual(values = popCols) +
+  theme(
+    legend.position = "top",
+    text = element_text(size = fs*1.5),
+    strip.text = element_text(size = fs*1.4),
+    axis.title = element_text(size = fs*1.4)
+  )
 dev.off()
 ```
 
@@ -562,33 +619,38 @@ H<sub>A</sub>: An association exists between genotypes and populations
 
 ```{r genotypeResults}
 genotypeResults <- genotypes %>%
-    filter(Population != 2010,
-           !variant.id %in% regionSNPs$variant.id) %>%
-    group_by(variant.id, snpID, Population, Genotype) %>%
-    tally() %>%
-    ungroup() %>%
-    split(f = .$variant.id) %>%
-    mclapply(function(x){
-        ft <- list(p.value = NA)
-        if (length(unique(x$Genotype)) > 1) {
-            ft <- x %>%
-                spread(Genotype, n, fill = 0) %>%
-                column_to_rownames("Population") %>%
-                dplyr::select(-variant.id, -snpID) %>%
-                fisher.test()
-        }
-        x %>% 
-            distinct(variant.id) %>%
-            mutate(p = ft$p.value)
-    },mc.cores = mc) %>%
-    bind_rows() %>%
-    filter(!is.na(p)) %>%
-    mutate(FDR = p.adjust(p, "fdr"),
-           adjP = p.adjust(p, "bonferroni")) %>%
-    arrange(p) %>%
-    left_join(genotypes %>%
-                  distinct(variant.id, snpID, chromosome, position)) %>%
-    dplyr::select(variant.id, snpID, chromosome, position, everything())
+  filter(
+    Population != 2010,
+    !variant.id %in% regionSNPs$variant.id
+  ) %>%
+  group_by(variant.id, snpID, Population, Genotype) %>%
+  tally() %>%
+  ungroup() %>%
+  split(f = .$variant.id) %>%
+  mclapply(function(x){
+    ft <- list(p.value = NA)
+    if (length(unique(x$Genotype)) > 1) {
+      ft <- x %>%
+        spread(Genotype, n, fill = 0) %>%
+        column_to_rownames("Population") %>%
+        dplyr::select(-variant.id, -snpID) %>%
+        fisher.test()
+    }
+    x %>% 
+      distinct(variant.id) %>%
+      mutate(p = ft$p.value)
+  },
+  mc.cores = mc
+  ) %>%
+  bind_rows() %>%
+  filter(!is.na(p)) %>%
+  mutate(FDR = p.adjust(p, "fdr"), adjP = p.adjust(p, "bonferroni")) %>%
+  arrange(p) %>%
+  left_join(
+    genotypes %>%
+      distinct(variant.id, snpID, chromosome, position)
+  ) %>%
+  dplyr::select(variant.id, snpID, chromosome, position, everything())
 ```
 
 
@@ -602,16 +664,20 @@ Under the full genotype model:
 genotypeResults %>%
   filter(adjP < alpha) %>%
   dplyr::select(-variant.id) %>%
-  left_join(subset(snp2Gene, snpID %in% .$snpID) %>%
-              as.data.frame() %>%
-              dplyr::select(snpID, `Gene within 100kb` = Name)) %>% 
+  left_join(
+    subset(snp2Gene, snpID %in% .$snpID) %>%
+      as.data.frame() %>%
+      dplyr::select(snpID, `Gene within 100kb` = Name)
+  ) %>% 
   mutate(position = comma(position)) %>%
-  pander(justify = "llrrrrl",
-         style = "rmarkdown",
-         big.mark = ",",
-         split.tables = Inf,
-         caption = paste(
-           "SNPs with adjusted p-values <", alpha, "when analysing by genotype."))
+  pander(
+    justify = "llrrrrl",
+    style = "rmarkdown",
+    big.mark = ",",
+    split.tables = Inf,
+    caption = paste(
+      "SNPs with adjusted p-values <", alpha, "when analysing by genotype.")
+  )
 ```
 
 ```{r manhattanGenotype, echo = FALSE, results='hide'}
@@ -643,32 +709,39 @@ knitr::include_graphics(file.path("..", "figures", "FigureS3a.png"))
 
 ```{r plotSigGenotypes, echo = FALSE, fig.cap="*Variants detected as significant to an FDR of 5%. Those denoted with an asterisk received a Bonferroni-adjusted p-value < 0.05 and these typically involved reduction of the minor allele frequency and a shift towards homozygous reference. The remaining sites showed a combination of the same and increasing minor allele abundance, with some variants becoming exclusively heterozygous in the 2012 population.*"}
 genotypeResults %>% 
-    filter(FDR < alpha) %>% 
-    left_join(
-        filter(
-            genotypes, 
-            snpID %in% .$snpID, 
-            Population %in% c(1996, 2012)
-        )
-    ) %>% 
-    mutate(Genotype = c("AA", "AB", "BB")[Genotype + 1],
-           Genotype = as.factor(Genotype),
-           Population = as.factor(Population),
-           snpID = case_when(
-               adjP < alpha ~ paste0(snpID, "*"),
-               adjP >= alpha ~ as.character(snpID)
-           ),
-           snpID = factor(snpID, levels = unique(snpID))) %>% 
-    ggplot(aes(Genotype, fill = Population)) + 
-    geom_bar(position = position_dodge2(preserve = "single")) + 
-    facet_wrap(~snpID, drop = FALSE, ncol = 7) + 
-    scale_fill_manual(values = c("black", "blue")) +
-    labs(y = "Count") + 
-    theme(
-        legend.direction = "horizontal", 
-        legend.position = c(0.75, 0.05)
+  filter(FDR < alpha) %>% 
+  left_join(
+    filter(
+      genotypes, 
+      snpID %in% .$snpID, 
+      Population %in% c(1996, 2012)
     )
+  ) %>% 
+  mutate(
+    Genotype = c("AA", "AB", "BB")[Genotype + 1],
+    Genotype = as.factor(Genotype),
+    Population = as.factor(Population),
+    snpID = case_when(
+      adjP < alpha ~ paste0(snpID, "*"),
+      adjP >= alpha ~ as.character(snpID)
+    ),
+    snpID = factor(snpID, levels = unique(snpID))
+  ) %>% 
+  ggplot(aes(Genotype, fill = Population)) + 
+  geom_bar(position = position_dodge2(preserve = "single")) + 
+  facet_wrap(~snpID, drop = FALSE, ncol = 7) + 
+  scale_fill_manual(values = c("black", "blue")) +
+  labs(y = "Count") + 
+  theme(
+    legend.direction = "horizontal", 
+    legend.position = c(0.75, 0.05)
+  )
 ```
+
+```{r exportGenotypeRes}
+write_tsv(genotypeResults, "genotypeResults.tsv")
+```
+
 
 
 ### Allele Frequency Model
@@ -679,35 +752,44 @@ H<sub>A</sub>: An association exists between allele frequencies  and populations
 
 ```{r alleleResults}
 alleleResults <- genotypes %>%
-    filter(Population != 2010,
-           !variant.id %in% regionSNPs$variant.id) %>%
-    group_by(snpID, Population) %>%
-    summarise(P = sum(2 - Genotype),
-              Q = sum(Genotype)) %>%
-    ungroup() %>%
-    split(f = .$snpID) %>%
-    mclapply(function(x){
-        m <- as.matrix(x[c("P", "Q")])
-        ft <- list(p.value = NA) 
-        if (length(m) == 4) {
-            ft <- fisher.test(m)
-        }
-        x %>%
-            mutate(MAF = Q / (P + Q)) %>%
-            dplyr::select(snpID, Population, MAF) %>%
-            spread(Population, MAF) %>%
-            mutate(p = ft$p.value)
-    },mc.cores = mc) %>%
-    bind_rows() %>%
-    filter(!is.na(p)) %>%
-    dplyr::rename(MAF_1996 = `1996`,
-                  MAF_2012 = `2012`) %>%
-    mutate(FDR = p.adjust(p, "fdr"),
-           adjP = p.adjust(p, "bonferroni")) %>%
-    arrange(p) %>%
-    left_join(genotypes %>%
-                  distinct(snpID, chromosome, position)) %>%
-    dplyr::select(snpID, chromosome, position, everything())
+  filter(
+    Population != 2010,
+    !variant.id %in% regionSNPs$variant.id
+  ) %>%
+  group_by(snpID, Population) %>%
+  summarise(
+    P = sum(2 - Genotype),
+    Q = sum(Genotype)
+  ) %>%
+  ungroup() %>%
+  split(f = .$snpID) %>%
+  mclapply(function(x){
+    m <- as.matrix(x[c("P", "Q")])
+    ft <- list(p.value = NA) 
+    if (length(m) == 4) {
+      ft <- fisher.test(m)
+    }
+    x %>%
+      mutate(MAF = Q / (P + Q)) %>%
+      dplyr::select(snpID, Population, MAF) %>%
+      spread(Population, MAF) %>%
+      mutate(p = ft$p.value)
+  },mc.cores = mc) %>%
+  bind_rows() %>%
+  filter(!is.na(p)) %>%
+  dplyr::rename(
+    MAF_1996 = `1996`,
+    MAF_2012 = `2012`
+  ) %>%
+  mutate(
+    FDR = p.adjust(p, "fdr"),
+    adjP = p.adjust(p, "bonferroni")
+  ) %>%
+  arrange(p) %>%
+  left_join(
+    genotypes %>% distinct(snpID, chromosome, position)
+  ) %>%
+  dplyr::select(snpID, chromosome, position, everything())
 ```
 
 Under this model:
@@ -720,15 +802,18 @@ However, as these SNPs were within 21nt of each other, this may represent the sa
 ```{r,echo=FALSE}
 alleleResults %>%
     filter(FDR < alpha) %>%
-    left_join(subset(snp2Gene, snpID %in% .$snpID) %>%
-                  as.data.frame() %>%
-                  dplyr::select(snpID, `Gene within 100kb` = Name)
+    left_join(
+      subset(snp2Gene, snpID %in% .$snpID) %>%
+        as.data.frame() %>%
+        dplyr::select(snpID, `Gene within 100kb` = Name)
     ) %>% 
-    pander(justify = "llrrrrrrl",
-           style = "rmarkdown",
-           big.mark = ",",
-           split.tables = Inf,
-           caption = paste("SNPs considered as significant when analysing by genotype using an FDR cutoff of", alpha))
+    pander(
+      justify = "llrrrrrrl",
+      style = "rmarkdown",
+      big.mark = ",",
+      split.tables = Inf,
+      caption = paste("SNPs considered as significant when analysing by genotype using an FDR cutoff of", alpha)
+    )
 ```
 
 
@@ -740,9 +825,11 @@ alleleResults %>%
   mutate(Chr = as.numeric(chromosome)) %>%
   filter(!is.na(Chr)) %>%
   dplyr::select(SNP = snpID, CHR = Chr, BP = position, P = p) %>%
-  manhattan(suggestiveline = FALSE, 
-            genomewideline = -log10(hLine),
-            highlight = hLight)
+  manhattan(
+    suggestiveline = FALSE, 
+    genomewideline = -log10(hLine),
+    highlight = hLight
+  )
 dev.off()
 ```
 
@@ -776,18 +863,22 @@ alleleResults %>%
 alleleResults %>% 
   filter(FDR < alpha) %>% 
   gather(Population, B, contains("MAF")) %>%
-  mutate(Population = str_remove(Population, "MAF_"),
-         A = 1 - B,
-         Population = as.factor(Population),
-         snpID = case_when(
-           adjP < alpha ~ paste0(snpID, "*"),
-           adjP >= alpha ~ as.character(snpID)
-         ),
-         snpID = factor(snpID, levels = unique(snpID))) %>% 
+  mutate(
+    Population = str_remove(Population, "MAF_"),
+    A = 1 - B,
+    Population = as.factor(Population),
+    snpID = case_when(
+      adjP < alpha ~ paste0(snpID, "*"),
+      adjP >= alpha ~ as.character(snpID)
+    ),
+    snpID = factor(snpID, levels = unique(snpID))
+  ) %>% 
   gather(Allele, Freq, A, B) %>%
   ggplot(aes(Allele, y = Freq, fill = Population)) + 
-  geom_bar(position = position_dodge2(preserve = "single"),
-           stat = "identity") + 
+  geom_bar(
+    position = position_dodge2(preserve = "single"),
+    stat = "identity"
+  ) + 
   facet_wrap(~snpID, drop = FALSE, ncol = 7) + 
   scale_fill_manual(values = c("black", "blue")) +
   labs(y = "Count") + 
@@ -795,6 +886,11 @@ alleleResults %>%
     legend.direction = "horizontal", 
     legend.position = c(0.75, 0.05)
   )
+```
+
+
+```{r exportAlleleResults}
+write_tsv(alleleResults, "alleleResults.tsv")
 ```
 
 
@@ -815,11 +911,13 @@ var2VCF <- genotypes %>%
 
 ```{r, eval=FALSE}
 gdsFile <- seqOpen(gdsPath, readonly = TRUE)
-seqSetFilter(gdsFile, 
-             variant.id = var2VCF,
-             sample.id = sampleID %>% 
-                 filter(Population %in% c(1996, 2012)) %>% 
-                 .[["Sample"]])
+seqSetFilter(
+  gdsFile, 
+  variant.id = var2VCF,
+  sample.id = sampleID %>% 
+    filter(Population %in% c(1996, 2012)) %>% 
+    .[["Sample"]]
+)
 seqGDS2VCF(gdsFile, "../5_stacks/vcf/filtered.vcf.gz")
 seqResetFilter(gdsFile)
 seqClose(gdsFile)

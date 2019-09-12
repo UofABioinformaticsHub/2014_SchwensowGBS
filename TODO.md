@@ -4,5 +4,5 @@
 - [] Grab FET p-value from `populations.fst_1-2.tsv.gz`
 - [] Add distances to SNPs in tables, and information about being within coding regions etc
 - [] Add table for Bayescan results
-- [] Export tables to csv
+- [x] Export tables to csv
 - Simulation?
