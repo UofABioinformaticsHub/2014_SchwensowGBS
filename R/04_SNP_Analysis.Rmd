@@ -144,6 +144,7 @@ ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3
     .[,c("gene_id", "Name", "description")]
 ```
 
+
 The set of SNPs under investigation was also defined as a GRanges object.
 
 ```{r snpsGR}
@@ -162,9 +163,21 @@ This was intersected with the set of genes to connect SNPs to genes within `r ma
 
 ```{r snp2Gene}
 snp2Gene <- snpsGR %>% 
-    resize(width = 1000*maxKb/2 -1) %>%
+    resize(width = 1000*maxKb/2 - 1) %>%
     trim() %>%
     join_overlap_inner(ensGenes) 
+```
+
+A set of SNPs within exonic regions was also defined.
+
+```{r ensExons}
+ensExons <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz") %>%
+    import.gff3(feature.type = "exon", sequenceRegionsAsSeqinfo = TRUE) %>%
+  join_overlap_inner_within_directed(
+    ensGenes, maxgap = 0, minoverlap = 0, suffix = c(".exon", "")
+  ) %>%
+  join_overlap_inner(snpsGR)
+ensExons <- ensExons[,setdiff(colnames(mcols(ensExons)), "Name.exon")]
 ```
 
 
@@ -653,25 +666,58 @@ genotypeResults <- genotypes %>%
   dplyr::select(variant.id, snpID, chromosome, position, everything())
 ```
 
+```{r}
+genoSNPs <- genotypeResults %>%
+  dplyr::filter(adjP < alpha) %>%
+  .[["snpID"]]
+```
 
-Under the full genotype model:
-
-- `r nrow(filter(genotypeResults, adjP < alpha))` genotypes were detected as being significantly associated with the two populations when controlling the FWER at &#945; = `r alpha`
-- `r nrow(filter(genotypeResults, FDR < alpha))` genotypes were detected as being significantly associated with the two populations when controlling the FDR at &#945; = `r alpha`
-- For the most highly ranked SNP (`r genotypeResults$snpID[[1]]`), the minor allele has been completely lost in the 2012 population
-
-```{r,echo=FALSE}
-genotypeResults %>%
-  filter(adjP < alpha) %>%
-  dplyr::select(-variant.id) %>%
+```{r echo = FALSE}
+snpsGR %>% 
+  subset(snpID %in% genoSNPs) %>% 
+  join_nearest(ensGenes) %>%
+  as.data.frame() %>%
   left_join(
-    subset(snp2Gene, snpID %in% .$snpID) %>%
-      as.data.frame() %>%
-      dplyr::select(snpID, `Gene within 100kb` = Name)
-  ) %>% 
+    ensGenes %>% as.data.frame(),
+    by = c("Name", "gene_id", "seqnames", "description"),
+    suffix = c("_snp", "_gene")
+  ) %>%
+  as_tibble() %>%
+  dplyr::select(seqnames, start_snp, variant.id, snpID, gene_id, Name, start_gene, end_gene) %>%
+  mutate(dist2Gene = case_when(
+    start_snp >= start_gene & start_snp <= end_gene ~ 0L,
+    start_snp < start_gene ~ start_gene - start_snp,
+    start_snp > end_gene ~ start_snp - end_gene
+  ),
+  Name = case_when(
+    dist2Gene > maxKb*1000 ~ "",
+    dist2Gene < maxKb*1000 ~ Name
+  ),
+    gene_id = case_when(
+    dist2Gene > maxKb*1000 ~ "",
+    dist2Gene < maxKb*1000 ~ gene_id
+  ),
+  inExon = snpID %in% ensExons$snpID,
+  dist2Gene = case_when(
+    Name == "" ~ "",
+    inExon ~ "CDS",
+    dist2Gene == 0 & !inExon ~ "Intronic",
+    dist2Gene > 0 ~ comma(dist2Gene)
+  ),
+  seqnames = as.character(seqnames)
+  ) %>%
+  dplyr::select(
+    snpID,
+    chromosome = seqnames,
+    position = start_snp,
+    gene_id, Name, dist2Gene
+  ) %>%
+  left_join(genotypeResults) %>%
+  dplyr::select(-variant.id, FDR) %>%
   mutate(position = comma(position)) %>%
+  arrange(p) %>%
   pander(
-    justify = "llrrrrl",
+    justify = "llrlllrrr",
     style = "rmarkdown",
     big.mark = ",",
     split.tables = Inf,
@@ -679,6 +725,14 @@ genotypeResults %>%
       "SNPs with adjusted p-values <", alpha, "when analysing by genotype.")
   )
 ```
+
+
+Under the full genotype model:
+
+- `r nrow(filter(genotypeResults, adjP < alpha))` genotypes were detected as being significantly associated with the two populations when controlling the FWER at &#945; = `r alpha`
+- `r nrow(filter(genotypeResults, FDR < alpha))` genotypes were detected as being significantly associated with the two populations when controlling the FDR at &#945; = `r alpha`
+- For the most highly ranked SNP (`r genotypeResults$snpID[[1]]`), the minor allele has been completely lost in the 2012 population
+
 
 ```{r manhattanGenotype, echo = FALSE, results='hide'}
 pdf(file.path("..", "figures", "FigureS3a.pdf"), height = 0.6*h, width = w)
@@ -801,33 +855,79 @@ alleleResults <- genotypes %>%
   dplyr::select(snpID, chromosome, position, everything())
 ```
 
-Under this model:
 
-- `r nrow(filter(alleleResults, adjP < alpha))` SNP alleles were detected as being significantly associated with the two populations when controlling the FWER at &#945; = `r alpha`.
-However, as these SNPs were within 21nt of each other, this may represent the same haplotype 
-- `r nrow(filter(alleleResults, FDR < alpha))` SNP alleles were detected as being significantly associated with the two populations when controlling the FDR at &#945; = `r alpha`
+```{r}
+alleleSnps <- alleleResults %>%
+  dplyr::filter(FDR < alpha) %>%
+  .[["snpID"]]
+```
 
 
-```{r,echo=FALSE}
-alleleResults %>%
-    filter(FDR < alpha) %>%
-    left_join(
-      subset(snp2Gene, snpID %in% .$snpID) %>%
-        as.data.frame() %>%
-        dplyr::select(snpID, `Gene within 100kb` = Name)
-    ) %>% 
-    pander(
-      justify = "llrrrrrrl",
-      style = "rmarkdown",
-      big.mark = ",",
-      split.tables = Inf,
+```{r echo = FALSE}
+snpsGR %>% 
+  subset(snpID %in% alleleSnps) %>% 
+  join_nearest(ensGenes) %>%
+  as.data.frame() %>%
+  left_join(
+    ensGenes %>% as.data.frame(),
+    by = c("Name", "gene_id", "seqnames", "description"),
+    suffix = c("_snp", "_gene")
+  ) %>%
+  as_tibble() %>%
+  dplyr::select(seqnames, start_snp, variant.id, snpID, gene_id, Name, start_gene, end_gene) %>%
+  mutate(dist2Gene = case_when(
+    start_snp >= start_gene & start_snp <= end_gene ~ 0L,
+    start_snp < start_gene ~ start_gene - start_snp,
+    start_snp > end_gene ~ start_snp - end_gene
+  ),
+  Name = case_when(
+    dist2Gene > maxKb*1000 ~ "",
+    dist2Gene < maxKb*1000 ~ Name
+  ),
+    gene_id = case_when(
+    dist2Gene > maxKb*1000 ~ "",
+    dist2Gene < maxKb*1000 ~ gene_id
+  ),
+  inExon = snpID %in% ensExons$snpID,
+  dist2Gene = case_when(
+    Name == "" ~ "",
+    inExon ~ "CDS",
+    dist2Gene == 0 & !inExon ~ "Intronic",
+    dist2Gene > 0 ~ comma(dist2Gene)
+  ),
+  seqnames = as.character(seqnames)
+  ) %>%
+  dplyr::select(
+    snpID,
+    chromosome = seqnames,
+    position = start_snp,
+    gene_id, Name, dist2Gene
+  ) %>%
+  left_join(alleleResults) %>%
+  dplyr::select(
+    snpID, chromosome, position, starts_with("MAF"),
+    gene_id, Name, dist2Gene, p, FDR, adjP) %>%
+  mutate(position = comma(position)) %>%
+  arrange(p) %>%
+  pander(
+    justify = "llrrrlllrrr",
+    style = "rmarkdown",
+     big.mark = ",",
+    split.tables = Inf,
       caption = paste(
         "SNPs considered as significant when analysing by genotype using an FDR cutoff of", 
         percent(alpha),
         "Minor allele frequencies are reported based on frequencies in the 1996 population."
       )
-    )
+  )
 ```
+
+
+Under this model:
+
+- `r nrow(filter(alleleResults, adjP < alpha))` SNP alleles were detected as being significantly associated with the two populations when controlling the FWER at &#945; = `r alpha`.
+However, as these SNPs were within 21nt of each other, this may represent the same haplotype 
+- `r nrow(filter(alleleResults, FDR < alpha))` SNP alleles were detected as being significantly associated with the two populations when controlling the FDR at &#945; = `r alpha`
 
 
 ```{r manhattanAllele, echo = FALSE, fig.height=5, fig.width=8, }
