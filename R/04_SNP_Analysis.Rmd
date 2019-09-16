@@ -298,7 +298,7 @@ rightN <- tibble(
 )
 ```
 
-```{r mainPlot}
+```{r mainPlot, cache=TRUE}
 ggMap <- get_map(loc, zoom = 12, maptype = "terrain", color = "bw")
 zoomPlot <- ggmap(ggMap, extent = "normal", maprange = FALSE) +
     geom_path(
@@ -364,7 +364,7 @@ zoomPlot <- ggmap(ggMap, extent = "normal", maprange = FALSE) +
 ```
 
 
-```{r Map4Inset}
+```{r Map4Inset, cache=TRUE, dependson='mainPlot'}
 ausPolygon <- readRDS(file.path("..", "external", "ausPolygon.RDS"))
 ausPts <- SpatialPoints(cbind(x = loc[1], y = loc[2]))
 proj4string(ausPts) <- proj4string(ausPolygon)
@@ -379,7 +379,7 @@ ausPlot <- ggplot() +
   theme(plot.background = element_rect(fill = "white", colour = "black"))
 ```
 
-```{r map2Pdf, echo=FALSE}
+```{r map2Pdf, echo=FALSE, cache=TRUE, dependson=c('mainPlot', 'Map4Inset')}
 pdf(file.path("..", "figures", "Figure1.pdf"), width = w, height = h) 
 grid.newpage()
 vp1 <- viewport(0.5,0.5, 1, 1)
@@ -402,7 +402,7 @@ convert \
 knitr::include_graphics(file.path("..", "figures", "Figure1.png"))
 ```
 
-```{r zoomCentralPlot, fig.height=7, fig.width=7, fig.cap = "*Zoomed-in view of the central region for 2012 samples with colours showing sub-populations defined by PCA analysis. The region considered to be the Central Region is shaded in red. Due to overlapping GPS points a small amount of jitter has been added to the x-axis.*"}
+```{r zoomCentralPlot, cache=TRUE, fig.height=7, fig.width=7, fig.cap = "*Zoomed-in view of the central region for 2012 samples with colours showing sub-populations defined by PCA analysis. The region considered to be the Central Region is shaded in red. Due to overlapping GPS points a small amount of jitter has been added to the x-axis.*"}
 zoomLoc <- c(138.753, -31.242)
 xBreaks <- seq(138.74, 138.76, by = 0.01)
 xLabs <- parse(text = paste(xBreaks, "*degree ~ W", sep = ""))
@@ -722,7 +722,8 @@ snpsGR %>%
     big.mark = ",",
     split.tables = Inf,
     caption = paste(
-      "SNPs with adjusted p-values <", alpha, "when analysing by genotype.")
+      "SNPs with adjusted p-values <", alpha, "when analysing by genotype.",
+      "Any genes within", paste0(maxKb, "kb"), "of each SNP are indicated.")
   )
 ```
 
@@ -917,7 +918,8 @@ snpsGR %>%
       caption = paste(
         "SNPs considered as significant when analysing by genotype using an FDR cutoff of", 
         percent(alpha),
-        "Minor allele frequencies are reported based on frequencies in the 1996 population."
+        "Minor allele frequencies are reported based on frequencies in the 1996 population.",
+        "Any genes within", paste0(maxKb, "kb"), "are also shown."
       )
   )
 ```
