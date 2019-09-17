@@ -668,7 +668,7 @@ genotypeResults <- genotypes %>%
 
 ```{r}
 genoSNPs <- genotypeResults %>%
-  dplyr::filter(adjP < alpha) %>%
+  dplyr::filter(FDR < alpha) %>%
   .[["snpID"]]
 ```
 
@@ -722,8 +722,9 @@ snpsGR %>%
     big.mark = ",",
     split.tables = Inf,
     caption = paste(
-      "SNPs with adjusted p-values <", alpha, "when analysing by genotype.",
-      "Any genes within", paste0(maxKb, "kb"), "of each SNP are indicated.")
+      "Candidate SNPs to an FDR of", percent_format(1)(alpha), "when analysing by genotype.",
+      "Any genes within", paste0(maxKb, "kb"), "of each SNP are indicated.",
+      "Bonferroni-adjusted p-values are also given in the final column.")
   )
 ```
 
@@ -917,9 +918,10 @@ snpsGR %>%
     split.tables = Inf,
       caption = paste(
         "SNPs considered as significant when analysing by genotype using an FDR cutoff of", 
-        percent(alpha),
+        percent_format(1)(alpha),
         "Minor allele frequencies are reported based on frequencies in the 1996 population.",
-        "Any genes within", paste0(maxKb, "kb"), "are also shown."
+        "Any genes within", paste0(maxKb, "kb"), "are also shown.",
+        "Bonferroni-adjusted p-values are given in the final column."
       )
   )
 ```
@@ -1052,6 +1054,72 @@ bayRes <- file.path("..", "external", "BayescanOut.txt.gz") %>%
   mutate(variant.id = var2VCF[ID])
 ```
 
+```{r}
+bayRes %>%
+  dplyr::select(variant.id, qval, fst) %>%
+  dplyr::filter(qval < alpha) %>%
+  left_join(
+    genotypes %>% 
+      distinct(snpID, .keep_all = TRUE) %>% 
+      dplyr::select(variant.id, chromosome, position, snpID)
+  ) %>%
+  makeGRangesFromDataFrame(
+    keep.extra.columns = TRUE,
+    ignore.strand = TRUE,
+    seqinfo = seqinfo(snp2Gene), 
+    seqnames.field = "chromosome",
+    start.field = "position",
+    end.field = "position"
+  ) %>%
+  join_nearest(ensGenes) %>%
+  as.data.frame() %>%
+  left_join(
+    ensGenes %>% as.data.frame(),
+    by = c("Name", "gene_id", "seqnames", "description"),
+    suffix = c("_snp", "_gene")
+  ) %>%
+  as_tibble() %>%
+  dplyr::select(seqnames, start_snp, variant.id, snpID, gene_id, Name, start_gene, end_gene, qval, fst) %>%
+  mutate(dist2Gene = case_when(
+    start_snp >= start_gene & start_snp <= end_gene ~ 0L,
+    start_snp < start_gene ~ start_gene - start_snp,
+    start_snp > end_gene ~ start_snp - end_gene
+  ),
+  Name = case_when(
+    dist2Gene > maxKb*1000 ~ "",
+    dist2Gene < maxKb*1000 ~ Name
+  ),
+    gene_id = case_when(
+    dist2Gene > maxKb*1000 ~ "",
+    dist2Gene < maxKb*1000 ~ gene_id
+  ),
+  inExon = snpID %in% ensExons$snpID,
+  dist2Gene = case_when(
+    Name == "" ~ "",
+    inExon ~ "CDS",
+    dist2Gene == 0 & !inExon ~ "Intronic",
+    dist2Gene > 0 ~ comma(dist2Gene)
+  ),
+  seqnames = as.character(seqnames)
+  ) %>%
+  dplyr::select(
+    snpID, 
+    chromosome = seqnames, position = start_snp, 
+    gene_id, Name, dist2Gene, fst, qval) %>%
+  mutate(position = comma(position)) %>%
+  arrange(qval) %>%
+  pander(
+    justify = "llrllrrr",
+    style = "rmarkdown",
+     big.mark = ",",
+    split.tables = Inf,
+      caption = paste(
+        "Results from Bayescan with a q-value <", paste0(alpha, "."),
+        "The nearest gene within", paste0(maxKb, "kb"), "is also given.",
+        "One SNP detected by Bayescan was located on a scaffold with no genes (GL019119) & is not shown in this table."
+      )
+  )
+```
 
 
 ```{r plotVenn, echo=FALSE, fig.cap = "*Summary of results from all three methods, using an FDR of 0.05 for each approach. All SNPs detected under Bayescan were identified using Fisher's Exact Test for both allele and genotype analysis*"}
@@ -1070,10 +1138,54 @@ list(
 
 ```{r}
 sigSnps <- c(
-  filter(alleleResults, FDR < 0.05)$snpID,
-  filter(genotypeResults, FDR < 0.05)$snpID
+  filter(alleleResults, FDR < alpha)$snpID,
+  filter(genotypeResults, FDR < alpha)$snpID
 ) %>%
   unique()
+```
+
+### Export of values for Minotaur
+
+In order to run Minotaur a set of values was required for each SNP and a file containing the following values was prepared:
+
+- p-values from both the genotype & allele frequency tests above
+- the values `prob`, `qval`, `alpha` and `fst` from the Bayescan results. **Only one of these should be submitted to Minotaur.**
+- `Overall Pi` from the stacks populations output.
+
+```{r exportMinotaur}
+genotypes %>% 
+  distinct(variant.id, chromosome, position, snpID) %>% 
+  filter(!snpID %in% regionSNPs$snpID) %>%
+  left_join(
+    genotypeResults %>%
+      dplyr::select(variant.id, chromosome, position, snpID, genotype_p = p)
+  ) %>%
+  left_join(
+    alleleResults %>%
+      dplyr::select(chromosome, position, snpID, allele_p = p)
+  ) %>%
+  left_join(
+    bayRes %>%
+      dplyr::select(
+        variant.id, 
+        bayescan_prob = prob, 
+        bayescan_qval = qval, 
+        bayescan_alpha = alpha, 
+        bayescan_fst = fst)
+  ) %>%
+  left_join(
+    file.path("..", "5_stacks", "stacks", "populations.fst_1-2.tsv.gz") %>%
+  gzfile() %>%
+  read_tsv(col_types = "c--ciinnnnnnnnnnn") %>%
+  mutate(snpID = paste(`# Locus ID`, Column, sep = "_")) %>%
+  dplyr::select(
+    chromosome = Chr,
+    position = BP,
+    snpID,
+    populations_pi = `Overall Pi`
+  )
+  ) %>%
+  write_tsv("valuesForMinotaur.tsv")
 ```
 
 
