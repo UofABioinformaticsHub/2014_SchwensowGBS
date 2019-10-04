@@ -672,6 +672,7 @@ genoSNPs <- genotypeResults %>%
   .[["snpID"]]
 ```
 
+
 ```{r echo = FALSE}
 snpsGR %>% 
   subset(snpID %in% genoSNPs) %>% 
@@ -712,6 +713,16 @@ snpsGR %>%
     position = start_snp,
     gene_id, Name, dist2Gene
   ) %>%
+  bind_rows(
+    subset(snpsGR, snpID %in% setdiff(genoSNPs, .$snpID)) %>%
+      as.data.frame() %>%
+      mutate(seqnames = as.character(seqnames)) %>%
+      dplyr::select(
+        snpID,
+        chromosome = seqnames,
+        position = start
+      )
+  ) %>%
   left_join(genotypeResults) %>%
   dplyr::select(-variant.id, FDR) %>%
   mutate(position = comma(position)) %>%
@@ -723,7 +734,7 @@ snpsGR %>%
     split.tables = Inf,
     caption = paste(
       "Candidate SNPs to an FDR of", percent_format(1)(alpha), "when analysing by genotype.",
-      "Any genes within", paste0(maxKb, "kb"), "of each SNP are indicated.",
+      "The nearest gene to each SNP (within", paste0(maxKb, "kb"), ") is indicated.",
       "Bonferroni-adjusted p-values are also given in the final column.")
   )
 ```
@@ -930,7 +941,6 @@ snpsGR %>%
 Under this model:
 
 - `r nrow(filter(alleleResults, adjP < alpha))` SNP alleles were detected as being significantly associated with the two populations when controlling the FWER at &#945; = `r alpha`.
-However, as these SNPs were within 21nt of each other, this may represent the same haplotype 
 - `r nrow(filter(alleleResults, FDR < alpha))` SNP alleles were detected as being significantly associated with the two populations when controlling the FDR at &#945; = `r alpha`
 
 
