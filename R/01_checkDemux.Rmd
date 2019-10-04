@@ -21,17 +21,18 @@ library(magrittr)
 library(scales)
 library(pander)
 library(tidyverse)
+if (interactive()) setwd(here::here("R"))
 ```
 
 ```{r loadData}
 rawFqc <- list.files("../0_rawData/FastQC/", pattern = "zip", full.names = TRUE) %>%
-    getFastqcData()
+    FastqcDataList()
 trimFqc <- list.files("../1_trimmed/FastQC/", pattern = "zip", full.names = TRUE) %>%
-    getFastqcData()
+    FastqcDataList()
 deMuxFqc <- list.files("../2_demux/FastQC/", pattern = "zip", full.names = TRUE) %>%
-    getFastqcData()
+    FastqcDataList()
 origFqc <- list.files("../previousAnalysis/FastQC/", pattern = "fastqc.zip", full.names = TRUE) %>%
-    getFastqcData()
+    FastqcDataList()
 samples <- read_tsv("../0_rawData/samples.tsv")
 ```
 
@@ -42,11 +43,11 @@ Positions 3 & 4 from R2 libraries `FCC21WPACXX-CHKPEI13070002_L6` and `FCC21WPAC
 This was likely due to an unsatisfactory nucleotide diversity in the original sequencing run and not enough *phiX* to overcome this, particularly as all R2 reads will begin with the restriction site (i.e. fragments will terminate with this as there is no R2 barcode).
 
 ```{r, echo=FALSE, fig.height=12, fig.cap = "Base qualities before trimming"}
-rawFqc %>% plotBaseQualities(plotType = "boxplot")
+rawFqc %>% plotBaseQuals(plotType = "boxplot")
 ```
 
 ```{r, echo=FALSE, fig.height=12, fig.cap = "Base qualities after trimming"}
-trimFqc %>% plotBaseQualities(plotType = "boxplot")
+trimFqc %>% plotBaseQuals(plotType = "boxplot")
 ```
 
 
@@ -54,19 +55,38 @@ trimFqc %>% plotBaseQualities(plotType = "boxplot")
 
 ```{r, echo=FALSE}
 list(
-    readTotals(rawFqc) %>% mutate(Type = "Raw"),
-    readTotals(trimFqc) %>% mutate(Type = "Trimmed")
+  readTotals(rawFqc) %>% mutate(Type = "Raw"),
+  readTotals(trimFqc) %>% mutate(Type = "Trimmed")
+) %>%
+  bind_rows() %>%
+  spread(key = "Type", value = "Total_Sequences") %>%
+  mutate(Library = str_remove(Filename, "_[12].fq.gz")) %>%
+  distinct(Library, .keep_all = TRUE) %>%
+  dplyr::select(Library, Raw, Trimmed) %>%
+  mutate(
+    Retained = percent(Trimmed / Raw),
+    Discarded = percent((Raw - Trimmed) / Raw)
+  ) %>%
+  arrange(Discarded) %>%
+  bind_rows(
+    tibble(
+      Library = "Total",
+      Raw = sum(.$Raw),
+      Trimmed = sum(.$Trimmed)
     ) %>%
-    bind_rows() %>%
-    spread(key = "Type", value = "Total_Sequences") %>%
-    mutate(Library = str_remove(Filename, "_[12].fq.gz")) %>%
-    distinct(Library, .keep_all = TRUE) %>%
-    dplyr::select(Library, Raw, Trimmed) %>%
-    mutate(Retained = percent(Trimmed / Raw),
-           Discarded = percent((Raw - Trimmed) / Raw)) %>%
-    arrange(Discarded) %>%
-    pander(big.mark = ",",
-           caption = "Results from adapter removal. Reads < 70bp after trimming were discarded during this process")
+      mutate(
+            Retained = percent(Trimmed / Raw),
+            Discarded = percent((Raw - Trimmed) / Raw)
+      )
+  ) %>%
+    pander(
+      big.mark = ",",
+      justify = "lrrrr",
+      style = "rmarkdown",
+      split.tables = Inf,
+      emphasize.strong.rows = 8,
+      caption = "Results from adapter removal. Reads < 70bp after trimming were discarded during this process"
+    )
 ```
 
 
@@ -92,14 +112,30 @@ deMuxReadTotals <- readTotals(deMuxFqc) %>%
 
 ```{r, echo = FALSE}
 trimReadTotals %>%
-    left_join(deMuxReadTotals) %>%
-    mutate(`Recovery Rate` = DeMultiplexed / Total_Sequences) %>%
-    dplyr::select(Library, everything()) %>%
-    dplyr::rename(`Total Sequences` = Total_Sequences) %>%
-    mutate(`Recovery Rate` = percent(`Recovery Rate`)) %>%
-    arrange(`Recovery Rate`) %>%
-    pander(split.tables = Inf, big.mark = ",",
-           caption = "Recovery rate from demultiplexing the 1996 and 2012 samples") 
+  left_join(deMuxReadTotals) %>%
+  mutate(`Recovery Rate` = DeMultiplexed / Total_Sequences) %>%
+  dplyr::select(Library, everything()) %>%
+  dplyr::rename(`Total Sequences` = Total_Sequences) %>%
+  mutate(`Recovery Rate` = percent(`Recovery Rate`)) %>%
+  arrange(`Recovery Rate`) %>%
+  bind_rows(
+    tibble(
+      Library = "Total",
+      `Total Sequences` = sum(.$`Total Sequences`),
+      DeMultiplexed = sum(.$DeMultiplexed)
+    ) %>%
+      mutate(
+        `Recovery Rate` = percent(DeMultiplexed / `Total Sequences`)
+      ) 
+  ) %>%
+  pander(
+    split.tables = Inf, 
+    big.mark = ",",
+    justify = "lrrr",
+    style = "rmarkdown",
+    emphasize.strong.rows = 8,
+    caption = "Recovery rate from demultiplexing the 1996 and 2012 samples, after adapter removal"
+  ) 
 ```
 
 ```{r, echo=FALSE}
@@ -113,30 +149,36 @@ cp <- paste("*Read Totals for each of the 1996 & 2012 samples.",
 
 ```{r, echo=FALSE, fig.cap=cp}
 plotly::ggplotly(
-    deMuxFqc %>%
-        magrittr::extract(grepl("(ora|gc).+1.fq.gz", fileName(.))) %>%
-        readTotals() %>%
-        mutate(ID = str_remove(Filename, ".1.fq.gz")) %>%
-        left_join(samples) %>%
-        mutate(Population = case_when(
-            grepl("gc", ID) ~ "1996",
-            grepl("ora", ID) ~ "2012"
-        )) %>%
-        ggplot(aes(ID, Total_Sequences, fill = Population)) +
-        geom_bar(stat = "identity") +
-        geom_hline(aes(yintercept = mn),
-                   data = . %>% summarise(mn = mean(Total_Sequences))) +
-        geom_hline(aes(yintercept = mn),
-                   data = . %>% group_by(Library) %>% summarise(mn = mean(Total_Sequences)),
-                   colour = "green",
-                   linetype = 2) +
-        facet_wrap(~Library, scales = "free_x", nrow = 2) +
-        scale_y_continuous(labels = comma) +
-        scale_fill_manual(values = c(rgb(0.1, 0.1, 0.7), rgb(0.7, 0.1, 0.1))) +
-        labs(x = c(), y = c()) +
-        theme_bw() +
-        theme(axis.text.x = element_text(angle = 90),
-              legend.position = "none")
+  deMuxFqc %>%
+    magrittr::extract(grepl("(ora|gc).+1.fq.gz", fqName(.))) %>%
+    readTotals() %>%
+    mutate(ID = str_remove(Filename, ".1.fq.gz")) %>%
+    left_join(samples) %>%
+    mutate(Population = case_when(
+      grepl("gc", ID) ~ "1996",
+      grepl("ora", ID) ~ "2012"
+    )) %>%
+    ggplot(aes(ID, Total_Sequences, fill = Population)) +
+    geom_bar(stat = "identity") +
+    geom_hline(
+      aes(yintercept = mn),
+      data = . %>% summarise(mn = mean(Total_Sequences))
+    ) +
+    geom_hline(
+      aes(yintercept = mn),
+      data = . %>% group_by(Library) %>% summarise(mn = mean(Total_Sequences)),
+      colour = "green",
+      linetype = 2
+    ) +
+    facet_wrap(~Library, scales = "free_x", nrow = 2) +
+    scale_y_continuous(labels = comma) +
+    scale_fill_manual(values = c(rgb(0.1, 0.1, 0.7), rgb(0.7, 0.1, 0.1))) +
+    labs(x = c(), y = c()) +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(angle = 90),
+      legend.position = "none"
+    )
 )
 ```
 
@@ -210,10 +252,10 @@ list(
 ```{r, echo=FALSE, fig.cap = "Comparison of library sizes for the three populations."}
 list(
     origFqc %>%
-        magrittr::extract(!grepl("(ora|gc)", fileName(.))) %>%
+        magrittr::extract(!grepl("(ora|gc)", fqName(.))) %>%
         readTotals(),
     deMuxFqc %>%
-        magrittr::extract(grepl("1.fq", fileName(.))) %>%
+        magrittr::extract(grepl("1.fq", fqName(.))) %>%
         readTotals()
 ) %>%
     bind_rows() %>%
@@ -236,7 +278,7 @@ list(
 
 ```{r, echo=FALSE, fig.cap="GC content for all 1996 and 2012 samples."}
 deMuxFqc %>%
-    magrittr::extract(grepl("(ora|gc)", fileName(.))) %>%
+    magrittr::extract(grepl("(ora|gc)", fqName(.))) %>%
     plotGcContent(plotType = "line", usePlotly = TRUE, theoreticalGC = FALSE)
 ```
 
@@ -246,7 +288,7 @@ This sample should be excluded from all further analysis.
 
 ```{r, echo=FALSE, fig.cap="GC content for all Turretfield samples."}
 origFqc %>%
-    magrittr::extract(!grepl("(ora|gc)", fileName(.))) %>%
+    magrittr::extract(!grepl("(ora|gc)", fqName(.))) %>%
     plotGcContent(plotType = "line", usePlotly = TRUE, theoreticalGC = FALSE)
 ```
 
@@ -255,14 +297,14 @@ origFqc %>%
 
 ```{r, echo=FALSE, fig.cap = "Length Distribution for all files"}
 deMuxFqc %>%
-    plotSequenceLengthDistribution(usePlotly = TRUE, dendrogram = TRUE)
+    plotSeqLengthDistn(usePlotly = TRUE, dendrogram = TRUE)
 ```
 
 
 ## Sequence Content
 
 ```{r, echo=FALSE, fig.cap="Sequence content showing the presence of the RS in both the Turretfield and R2 samples.", fig.height=12}
-plotSequenceContent(deMuxFqc, usePlotly = TRUE)
+plotSeqContent(deMuxFqc, usePlotly = TRUE)
 ```
 
 ## Conclusion
