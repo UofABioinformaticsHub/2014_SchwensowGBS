@@ -168,6 +168,8 @@ snp2Gene <- snpsGR %>%
     join_overlap_inner(ensGenes) 
 ```
 
+Of the initial `r comma(length(unique(snpsGR$snpID)))` SNPs, `r comma(length(unique(snp2Gene$snpID)))` were found to be within `r maxKb`KB of a gene.
+
 A set of SNPs within exonic regions was also defined.
 
 ```{r ensExons}
@@ -634,7 +636,8 @@ H<sub>A</sub>: An association exists between genotypes and populations
 genotypeResults <- genotypes %>%
   filter(
     Population != 2010,
-    !variant.id %in% regionSNPs$variant.id
+    !variant.id %in% regionSNPs$variant.id,
+    variant.id %in% snp2Gene$variant.id
   ) %>%
   group_by(variant.id, snpID, Population, Genotype) %>%
   tally() %>%
@@ -821,7 +824,8 @@ H<sub>A</sub>: An association exists between allele frequencies  and populations
 alleleResults <- genotypes %>%
   filter(
     Population != 2010,
-    !variant.id %in% regionSNPs$variant.id
+    !variant.id %in% regionSNPs$variant.id,
+    variant.id %in% snp2Gene$variant.id
   ) %>%
   group_by(snpID, Population) %>%
   summarise(
@@ -1067,7 +1071,10 @@ bayRes <- file.path("..", "external", "BayescanOut.txt.gz") %>%
 ```{r}
 bayRes %>%
   dplyr::select(variant.id, qval, fst) %>%
-  dplyr::filter(qval < alpha) %>%
+  dplyr::filter(
+    qval < alpha,
+    variant.id %in% snp2Gene$variant.id
+  ) %>%
   left_join(
     genotypes %>% 
       distinct(snpID, .keep_all = TRUE) %>% 
@@ -1140,7 +1147,7 @@ list(
     left_join(snps) %>%
     dplyr::filter(FDR < alpha) %>%
     .[["variant.id"]],
-  Bayescan = dplyr::filter(bayRes, qval < 0.05)$variant.id
+  Bayescan = dplyr::filter(bayRes, qval < 0.05, variant.id %in% snp2Gene$variant.id)$variant.id
 ) %>% 
  VennDiagram::venn.diagram(filename = NULL) %>%
   grid.draw()
@@ -1165,7 +1172,10 @@ In order to run Minotaur a set of values was required for each SNP and a file co
 ```{r exportMinotaur}
 genotypes %>% 
   distinct(variant.id, chromosome, position, snpID) %>% 
-  filter(!snpID %in% regionSNPs$snpID) %>%
+  filter(
+    !snpID %in% regionSNPs$snpID,
+    variant.id %in% snp2Gene$variant.id
+  ) %>%
   left_join(
     genotypeResults %>%
       dplyr::select(variant.id, chromosome, position, snpID, genotype_p = p)
