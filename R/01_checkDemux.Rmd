@@ -182,6 +182,9 @@ plotly::ggplotly(
 )
 ```
 
+In summary, of the `r comma(sum(readTotals(rawFqc)$Total_Sequences)/2)` initial reads, a total of `r comma(sum(readTotals(deMuxFqc)$Total_Sequences)/2)` were retained after trimming and demultiplexing.
+This represents a combined recovery rate of `r  percent(sum(readTotals(deMuxFqc)$Total_Sequences) / sum(readTotals(rawFqc)$Total_Sequences))` from the initial libraries.
+
 ### Comparison against previous analysis
 
 The revised strategy showed considerable improvement in yield for the libraries `FCC21WPACXX-CHKPEI13070002_L6` and `FCC21WPACXX-CHKPEI13070003_L7` which both contained exculsively 1996 samples.

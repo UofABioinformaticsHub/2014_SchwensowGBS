@@ -11,8 +11,9 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
-                      warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE
+)
 ```
 
 ## Setup
@@ -25,17 +26,18 @@ library(pander)
 library(tidyverse)
 theme_set(theme_bw())
 options(scipen=999)
+if (interactive()) setwd(here::here("R"))
 ```
 
 ```{r}
 deMuxFqc <- list.files("../3_demuxTrimmed/FastQC/", pattern = "zip", full.names = TRUE) %>%
-    getFastqcData()
+  FastqcDataList()
 alnFqc <- list.files("../4_aligned/FastQC/", pattern = "zip", full.names = TRUE) %>%
-    getFastqcData()
+  FastqcDataList()
 ```
 
 ```{r oryGC, eval = FALSE, echo=FALSE}
-df <- ngsReports:::.gcFromFasta("../Oryctolagus_cuniculus.OryCun2.0.dna.toplevel.fa", n = 1e+06, bp = 100)
+df <- estGcDistn("../external/Oryctolagus_cuniculus.OryCun2.0.dna.toplevel.fa", n = 1e+06, bp = 100)
 df %<>% rename(Ocuniculus = Freq)
 oryGC <- new("TheoreticalGC", 
              Genome = df, 
@@ -54,7 +56,7 @@ oryGC <- read_rds("oryGC.RDS")
 ```
 
 
-## Compare Reads With Alignments
+## Initial Comparison of Reads with Alignments
 
 Alignments were filtered for:
 
@@ -63,85 +65,85 @@ Alignments were filtered for:
 
 ```{r, echo=FALSE, fig.cap="*Comparison of library sizes before and after alignment. Given the filtering of alignments, this shows an acceptable rate of alignment across all samples*", fig.height=10, fig.width=12}
 list(
-    readTotals(deMuxFqc) %>%
-        mutate(Sample = str_remove(Filename, ".[12].fq.gz")) %>%
-        group_by(Sample) %>%
-        summarise(Total_Sequences = sum(Total_Sequences)) %>%
-        mutate(Type = "Pre-Alignment"),
-    readTotals(alnFqc) %>%
-        mutate(Sample = str_remove(Filename, ".bam"),
-               Type = "Post-Alignment") %>%
-        dplyr::select(Sample, Type, Total_Sequences)
+  readTotals(deMuxFqc) %>%
+    mutate(Sample = str_remove(Filename, ".[12].fq.gz")) %>%
+    group_by(Sample) %>%
+    summarise(Total_Sequences = sum(Total_Sequences)) %>%
+    mutate(Type = "Pre-Alignment"),
+  readTotals(alnFqc) %>%
+    mutate(Sample = str_remove(Filename, ".bam"),
+           Type = "Post-Alignment") %>%
+    dplyr::select(Sample, Type, Total_Sequences)
 ) %>%
-    bind_rows() %>%
-    mutate(Population = case_when(
-        grepl("gc", Sample) ~ "1996",
-        grepl("ora", Sample) ~ "2012",
-        !grepl("(gc|ora)", Sample) ~ "2010"
-    )) %>%
-    filter(Population != "2010") %>%
-    ggplot(aes(Sample, Total_Sequences, fill = Type)) +
-    geom_bar(stat = "identity", position = "dodge") +
-    coord_flip() +
-    facet_wrap(~Population, scales = "free") + 
-    scale_y_continuous(labels = comma) +
-    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+  bind_rows() %>%
+  mutate(Population = case_when(
+    grepl("gc", Sample) ~ "1996",
+    grepl("ora", Sample) ~ "2012",
+    !grepl("(gc|ora)", Sample) ~ "2010"
+  )) %>%
+  filter(Population != "2010") %>%
+  ggplot(aes(Sample, Total_Sequences, fill = Type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  facet_wrap(~Population, scales = "free") + 
+  scale_y_continuous(labels = comma) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 ```
 
 ```{r, echo=FALSE, fig.cap="*Alignment rate for each sample after filtering for uniquely mapped reads with high mapping qualities. The two samples gc2700 and gc2709 appear to be outliers.*", fig.height=9, fig.width=12}
 list(
-    readTotals(deMuxFqc) %>%
-        mutate(Sample = str_remove(Filename, ".[12].fq.gz")) %>%
-        group_by(Sample) %>%
-        summarise(Total_Sequences = sum(Total_Sequences)) %>%
-        mutate(Type = "Pre-Alignment"),
-    readTotals(alnFqc) %>%
-        mutate(Sample = str_remove(Filename, ".bam"),
-               Type = "Post-Alignment") %>%
-        dplyr::select(Sample, Type, Total_Sequences)
+  readTotals(deMuxFqc) %>%
+    mutate(Sample = str_remove(Filename, ".[12].fq.gz")) %>%
+    group_by(Sample) %>%
+    summarise(Total_Sequences = sum(Total_Sequences)) %>%
+    mutate(Type = "Pre-Alignment"),
+  readTotals(alnFqc) %>%
+    mutate(Sample = str_remove(Filename, ".bam"),
+           Type = "Post-Alignment") %>%
+    dplyr::select(Sample, Type, Total_Sequences)
 ) %>%
-    bind_rows() %>%
-    mutate(Population = case_when(
-        grepl("gc", Sample) ~ "1996",
-        grepl("ora", Sample) ~ "2012",
-        !grepl("(gc|ora)", Sample) ~ "2010"
-    )) %>%
-    filter(Population != "2010") %>%
-    spread(key = Type, value = Total_Sequences) %>%
-    mutate(Rate = `Post-Alignment`/`Pre-Alignment`) %>%
-    ggplot(aes(Sample, Rate, fill = Population)) +
-    geom_bar(stat = "identity") +
-    coord_flip() +
-    facet_wrap(~Population, scales = "free_y") +
-    scale_y_continuous(label = percent, expand = expand_scale(c(0, 0.05))) +
-    labs(y = "Alignment Rate")
+  bind_rows() %>%
+  mutate(Population = case_when(
+    grepl("gc", Sample) ~ "1996",
+    grepl("ora", Sample) ~ "2012",
+    !grepl("(gc|ora)", Sample) ~ "2010"
+  )) %>%
+  filter(Population != "2010") %>%
+  spread(key = Type, value = Total_Sequences) %>%
+  mutate(Rate = `Post-Alignment`/`Pre-Alignment`) %>%
+  ggplot(aes(Sample, Rate, fill = Population)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  facet_wrap(~Population, scales = "free_y") +
+  scale_y_continuous(label = percent, expand = expand_scale(c(0, 0.05))) +
+  labs(y = "Alignment Rate")
 ```
 
 
 ```{r, echo=FALSE}
 readTotals(alnFqc) %>%
-    mutate(Sample = str_remove(Filename, ".bam"),
-           Population = case_when(
-               grepl("gc", Sample) ~ "1996",
-               grepl("ora", Sample) ~ "2012",
-               !grepl("(gc|ora)", Sample) ~ "2010"
-           )) %>%
-    dplyr::select(Sample, Population, Total_Sequences) %>%
-    group_by(Population) %>%
-    summarise(Samples = n(),
-              `Smallest Library` = min(Total_Sequences),
-              `Median Library` = median(Total_Sequences),
-              `Largest Library` = max(Total_Sequences),
-              `Total Alignments` = sum(Total_Sequences)) %>%
-    pander(big.mark = ",",
-           split.tables = Inf,
-           style = "rmarkdown",
-           justify = "rrrrrr",
-           caption = "Summary of Library Sizes After Alignment")
+  mutate(Sample = str_remove(Filename, ".bam"),
+         Population = case_when(
+           grepl("gc", Sample) ~ "1996",
+           grepl("ora", Sample) ~ "2012",
+           !grepl("(gc|ora)", Sample) ~ "2010"
+         )) %>%
+  dplyr::select(Sample, Population, Total_Sequences) %>%
+  group_by(Population) %>%
+  summarise(Samples = n(),
+            `Smallest Library` = min(Total_Sequences),
+            `Median Library` = median(Total_Sequences),
+            `Largest Library` = max(Total_Sequences),
+            `Total Alignments` = sum(Total_Sequences)) %>%
+  pander(big.mark = ",",
+         split.tables = Inf,
+         style = "rmarkdown",
+         justify = "rrrrrr",
+         caption = "Summary of Library Sizes After Alignment")
 ```
 
 
-## Identification of Low Quality Samples by GC content
+### Identification of Low Quality Samples by GC content
 
 ```{r, echo=FALSE, fig.cap="*Difference in GC content when comparing each sample to Theoretical GC content from sampling the O. cuniculus genome.*", fig.height=10, fig.width=10}
 plotGcContent(alnFqc, usePlotly = TRUE, dendrogram = TRUE, theoreticalGC = TRUE, GCobject = oryGC, species = "Ocuniculus")
@@ -161,18 +163,80 @@ Potential low quality samples were identified by GC content as `r pander(lowQ)`.
 Alignments from these samples should be moved and placed into a separate folder to ensure their exclusion from the `stacks` pipeline.
 The sample `gc2776` was also of some concern, but was retained for downstream analysis.
 
-## Sequence Content
+### Sequence Content
 
 Inspection of the *per base sequence content* confirmed the divergent patterns of these samples.
 
 ```{r, echo=FALSE, fig.cap = "*Per base sequence content of all samples, with divergent patterns clearly identifying the outlier samples*", fig.height=15}
-o <- order(fileName(alnFqc))
-plotSequenceContent(alnFqc[o])
+o <- order(fqName(alnFqc))
+plotSeqContent(alnFqc[o])
 ```
 
-## Conclusion
+### Conclusion
 
 All identified low quality samples will be manually moved to a sub-folder indicating their low quality and will be excluded from the `stacks` pipeline.
+
+## Final Summary
+
+```{r}
+alnFqcPass <- alnFqc[!fqName(alnFqc) %in% lowQ]
+```
+
+
+```{r, echo=FALSE}
+list(
+  readTotals(deMuxFqc) %>%
+    mutate(Sample = str_remove(Filename, ".[12].fq.gz")) %>%
+    group_by(Sample) %>%
+    summarise(Total_Sequences = sum(Total_Sequences)) %>%
+    mutate(Type = "Pre-Alignment"),
+  readTotals(alnFqcPass) %>%
+    mutate(
+      Sample = str_remove(Filename, ".bam"),
+      Type = "Post-Alignment") %>%
+    dplyr::select(Sample, Type, Total_Sequences)
+) %>%
+  bind_rows() %>%
+  mutate(Population = case_when(
+    grepl("gc", Sample) ~ "1996",
+    grepl("ora", Sample) ~ "2012",
+    !grepl("(gc|ora)", Sample) ~ "2010"
+  )) %>%
+  filter(Population != "2010") %>%
+  spread(key = Type, value = Total_Sequences) %>%
+  dplyr::filter(`Post-Alignment` > 0) %>%
+  mutate(
+    `Alignment Rate` = percent(`Post-Alignment` / `Pre-Alignment`)
+  ) %>%
+  group_by(Population) %>%
+  summarise(
+    `Pre-Alignment` = sum(`Pre-Alignment`),
+    `Post-Alignment` = sum(`Post-Alignment`),
+    minRate =  min(`Alignment Rate`),
+    maxRate = max(`Alignment Rate`)
+  ) %>%
+  bind_rows(
+    tibble(
+      Population = "Total",
+      `Post-Alignment` = sum(.$`Post-Alignment`),
+      `Pre-Alignment` = sum(.$`Pre-Alignment`)
+    )
+  ) %>%
+  mutate(
+    `Alignment Rate` = percent(`Post-Alignment` / `Pre-Alignment`)
+  ) %>%
+  dplyr::select(Population, `Pre-Alignment`, contains("Align"), everything()) %>%
+  pander(
+    big.mark = ",",
+    style = "rmarkdown",
+    justify = "lrrrrr",
+    missing = "",
+    emphasize.strong.rows = nrow(.),
+    split.table = Inf,
+    caption = "Summary of alignment rates overall and by population"
+  )
+```
+
 
 ## Session Info
 
