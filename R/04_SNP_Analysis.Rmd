@@ -173,7 +173,7 @@ A set of SNPs within exonic regions was also defined.
 ```{r ensExons}
 ensExons <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz") %>%
     import.gff3(feature.type = "exon", sequenceRegionsAsSeqinfo = TRUE) %>%
-  join_overlap_inner_within_directed(
+  join_overlap_inner_within(
     ensGenes, maxgap = 0, minoverlap = 0, suffix = c(".exon", "")
   ) %>%
   join_overlap_inner(snpsGR)
@@ -1146,13 +1146,76 @@ list(
   grid.draw()
 ```
 
-```{r}
+```{r sigSnps}
 sigSnps <- c(
   filter(alleleResults, FDR < alpha)$snpID,
   filter(genotypeResults, FDR < alpha)$snpID
 ) %>%
   unique()
 ```
+
+
+```{r}
+suppressWarnings(
+  snpsGR %>%
+    subset(snpID %in% sigSnps) %>%
+    resize(width = 1000*maxKb/2) %>%
+    trim() %>%
+    find_overlaps(ensGenes) %>%
+    as.data.frame() %>%
+    as_tibble() %>%
+    left_join(snps, by = c("variant.id", "snpID", "Col")) %>%
+    dplyr::select(snpID, gene_id, Name, chromosome, position) %>%
+    left_join(
+      as.data.frame(ensGenes), by = c("gene_id", "Name")
+    ) %>%
+    mutate(
+      distance = case_when(
+        position < start ~ comma(start - position),
+        position > end ~ comma(position - end),
+        snpID %in% ensExons$snpID ~ "Exonic",
+        position >= start & position <= end ~ "Intronic"
+      )
+    ) %>%
+    mutate(
+      model = ifelse(
+        snpID %in% filter(alleleResults, FDR < alpha)$snpID, "A", ""
+        ),
+      model = ifelse(
+         snpID %in% dplyr::filter(snps, variant.id %in% dplyr::filter(bayRes, qval < 0.05)$variant.id)$snpID,
+         paste0(model, "B"), model
+      ),
+      model = ifelse(
+        snpID %in% filter(genotypeResults, FDR < alpha)$snpID,
+        paste0(model, "G"), model
+      )
+    ) %>%
+    unite(location, chromosome, position, sep = ":") %>%
+    dplyr::select(
+      `SNP Location` = location, 
+      `SNP ID` = snpID, 
+      `Gene ID` = gene_id, 
+      `Gene Name` = Name, 
+      `Gene Width` = width, 
+      `Distance` = distance, 
+      Models = model
+    )
+) %>%
+  pander(
+    justify = "llllrll",
+    style = "rmarkdown",
+    split.tables = Inf,
+    caption = paste0(
+      "All putatively significant SNPs with genes located within ", maxKb, "kb. ",
+      "The distance from SNP to gene is indicated, unless the SNP is intronic/exonic. ",
+      "The model(s) which identified the SNP are indicated in the final column ",
+      "as (A) the Allele Model; (B) Bayescan and (G) the Genotype Model."
+    )
+  )
+```
+
+
+
 
 ### Export of values for Minotaur
 
