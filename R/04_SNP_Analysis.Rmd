@@ -1217,50 +1217,6 @@ suppressWarnings(
 
 
 
-### Export of values for Minotaur
-
-In order to run Minotaur a set of values was required for each SNP and a file containing the following values was prepared:
-
-- p-values from both the genotype & allele frequency tests above
-- the values `prob`, `qval`, `alpha` and `fst` from the Bayescan results. **Only one of these should be submitted to Minotaur.**
-- `Overall Pi` from the stacks populations output.
-
-```{r exportMinotaur}
-genotypes %>% 
-  distinct(variant.id, chromosome, position, snpID) %>% 
-  filter(!snpID %in% regionSNPs$snpID) %>%
-  left_join(
-    genotypeResults %>%
-      dplyr::select(variant.id, chromosome, position, snpID, genotype_p = p)
-  ) %>%
-  left_join(
-    alleleResults %>%
-      dplyr::select(chromosome, position, snpID, allele_p = p)
-  ) %>%
-  left_join(
-    bayRes %>%
-      dplyr::select(
-        variant.id, 
-        bayescan_prob = prob, 
-        bayescan_qval = qval, 
-        bayescan_alpha = alpha, 
-        bayescan_fst = fst)
-  ) %>%
-  left_join(
-    file.path("..", "5_stacks", "stacks", "populations.fst_1-2.tsv.gz") %>%
-  gzfile() %>%
-  read_tsv(col_types = "c--ciinnnnnnnnnnn") %>%
-  mutate(snpID = paste(`# Locus ID`, Column, sep = "_")) %>%
-  dplyr::select(
-    chromosome = Chr,
-    position = BP,
-    snpID,
-    populations_pi = `Overall Pi`
-  )
-  ) %>%
-  write_tsv("valuesForMinotaur.tsv")
-```
-
 
 ## Enrichment testing
 
