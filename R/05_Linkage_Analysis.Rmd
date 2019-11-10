@@ -12,9 +12,11 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
-                      message = FALSE, warning = FALSE,
-                      fig.align = "center")
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE, warning = FALSE,
+  fig.align = "center"
+)
 ```
 
 
@@ -26,6 +28,8 @@ library(scales)
 library(magrittr)
 library(tidyverse)
 library(parallel)
+library(plyranges)
+library(rtracklayer)
 ```
 
 ```{r here, echo=FALSE}
@@ -50,11 +54,11 @@ gdsFile <- seqOpen(gdsPath, readonly = TRUE)
 
 ```{r sampleID}
 sampleID <- tibble(
-    Sample = seqGetData(gdsFile, "sample.annotation/Sample"),
-    Population = seqGetData(gdsFile, "sample.annotation/Population"),
-    Location = seqGetData(gdsFile, "sample.annotation/Location")
+  Sample = seqGetData(gdsFile, "sample.annotation/Sample"),
+  Population = seqGetData(gdsFile, "sample.annotation/Population"),
+  Location = seqGetData(gdsFile, "sample.annotation/Location")
 ) %>%
-    filter(Population != 2010)
+  filter(Population != 2010)
 ```
 
 Autosomal SNP IDs for the 1996 and 2012 samples were loaded.
@@ -63,20 +67,20 @@ Autosomal SNP IDs for the 1996 and 2012 samples were loaded.
 seqSetFilterChrom(gdsFile, include = 1:22)
 seqSetFilter(gdsFile, sample.id = sampleID$Sample)
 snps <- tibble(
-    variant.id = seqGetData(gdsFile, "variant.id") ,
-    chromosome = seqGetData(gdsFile, "chromosome"),
-    position = seqGetData(gdsFile, "position"),
-    snpID = seqGetData(gdsFile, "annotation/id"),
-    N = seqGetData(gdsFile, "genotype") %>% 
-        apply(3, colSums) %>% 
-        apply(2, function(x){sum(!is.na(x))}) 
+  variant.id = seqGetData(gdsFile, "variant.id") ,
+  chromosome = seqGetData(gdsFile, "chromosome"),
+  position = seqGetData(gdsFile, "position"),
+  snpID = seqGetData(gdsFile, "annotation/id"),
+  N = seqGetData(gdsFile, "genotype") %>% 
+    apply(3, colSums) %>% 
+    apply(2, function(x){sum(!is.na(x))}) 
 ) %>%
-    mutate(snpID = str_remove(snpID, ":.$"),
-           snpID = str_replace(snpID, ":", "_")) %>%
-    separate(snpID, into = c("Locus ID", "Col"), remove = FALSE) %>%
-    mutate_at(vars(`Locus ID`, Col), as.integer) %>%
-    mutate(Col = Col - 1,
-           snpID = paste(`Locus ID`, Col, sep = "_")) 
+  mutate(snpID = str_remove(snpID, ":.$"),
+         snpID = str_replace(snpID, ":", "_")) %>%
+  separate(snpID, into = c("Locus ID", "Col"), remove = FALSE) %>%
+  mutate_at(vars(`Locus ID`, Col), as.integer) %>%
+  mutate(Col = Col - 1,
+         snpID = paste(`Locus ID`, Col, sep = "_")) 
 seqResetFilter(gdsFile)
 ```
 
@@ -101,21 +105,21 @@ allLD <- snps %>%
       num.thread = mc,
       with.id = TRUE)
     ld$LD %>%
-    .[lower.tri(.)] %>%
-    enframe(value = "LD") %>%
-    dplyr::select(LD) %>%
-    cbind(
-      x$variant.id %>%
-        combn(2) %>%
-        t() %>%
-        set_colnames(c("ID1", "ID2"))
-    ) %>%
-    as_tibble() %>%
-    left_join(x %>% dplyr::select(ID1 = variant.id, Pos1 = position)) %>%
-    left_join(x %>% dplyr::select(ID2 = variant.id, Pos2 = position)) %>%
-    mutate(bp = Pos2 - Pos1,
-           chromosome = chr) %>%
-    dplyr::filter(!is.na(LD),bp < 1e6)
+      .[lower.tri(.)] %>%
+      enframe(value = "LD") %>%
+      dplyr::select(LD) %>%
+      cbind(
+        x$variant.id %>%
+          combn(2) %>%
+          t() %>%
+          set_colnames(c("ID1", "ID2"))
+      ) %>%
+      as_tibble() %>%
+      left_join(x %>% dplyr::select(ID1 = variant.id, Pos1 = position)) %>%
+      left_join(x %>% dplyr::select(ID2 = variant.id, Pos2 = position)) %>%
+      mutate(bp = Pos2 - Pos1,
+             chromosome = chr) %>%
+      dplyr::filter(!is.na(LD),bp < 1e6)
   }) %>%
   bind_rows()
 seqResetFilter(gdsFile)
@@ -153,30 +157,341 @@ fitDecay <- allLD %>%
 allLD %>%
   ggplot(aes(bp / 1e3, LD^2)) +
   geom_point(alpha = 0.1) +
-  geom_line(aes(x / 1e3, y), data = fitDecay$line,
-            colour = "blue") +
-  geom_vline(xintercept = 40, colour = "blue", linetype = 2) +
-  geom_vline(xintercept = dplyr::filter(fitDecay$line, y < 0.5*max(y))$x[1]/1e3,
-             colour = "red", linetype = 2) + 
+  geom_line(
+    aes(x / 1e3, y), 
+    data = fitDecay$line,
+    colour = "green"
+  ) +
+  geom_vline(xintercept = 40, colour = "green", linetype = 2) +
+  geom_vline(
+    xintercept = dplyr::filter(fitDecay$line, y < 0.5*max(y))$x[1]/1e3,
+    colour = "red", 
+    linetype = 2
+  ) + 
+  geom_text(
+    x = dplyr::filter(fitDecay$line, y < 0.5*max(y))$x[1]/1e3,
+    y = 0.95,
+    label = paste(
+      round(dplyr::filter(fitDecay$line, y < 0.5*max(y))$x[1]/1e3, 0),
+      "Kb"
+    ),
+    colour = "red"
+  ) +
   labs(x = "Distance (Kb)", y = expression(r^2)) +
   scale_x_continuous(
     expand = expand_scale(0.02), 
     breaks = c(40, seq(0, 1e3, by = 200)), 
     minor_breaks = seq(0, 1e3, by = 100)
-    ) +
-  theme(axis.title.y = element_text(angle = 0, hjust = 0.5, vjust = 0.5),
-        text = element_text(size = 14))
+  ) +
+  theme(
+    axis.title.y = element_text(angle = 0, hjust = 0.5, vjust = 0.5),
+    text = element_text(size = 14)
+  )
+```
+
+## Analysis of Significant SNPs
+
+As the set of SNPs under analysis had been pruned in order to only include one representative SNP in the case of linkage, any SNPs in linkage to the detected SNPs were explored.
+In addition, SNPs in the same locus which were not in linkage were explored.
+Correlations were calculated for each timepoint separately as they may not be expected to be the same at each timepoint.
+
+```{r linkageSnpSetup, cache=TRUE}
+alleleResults <- read_tsv("alleleResults.tsv")
+genotypeResults <- read_tsv("genotypeResults.tsv")
+sampleID <- tibble(
+  Sample = seqGetData(gdsFile, "sample.annotation/Sample"),
+  Population = seqGetData(gdsFile, "sample.annotation/Population"),
+  Location = seqGetData(gdsFile, "sample.annotation/Location")
+)
+ensGenes <- file.path(
+  "..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz"
+) %>%
+  import.gff3(feature.type = "gene", sequenceRegionsAsSeqinfo = TRUE) %>%
+  .[,c("gene_id", "Name", "description")]
+snps <- tibble(
+  variant.id = seqGetData(gdsFile, "variant.id") ,
+  chromosome = seqGetData(gdsFile, "chromosome"),
+  position = seqGetData(gdsFile, "position"),
+  snpID = seqGetData(gdsFile, "annotation/id")
+) %>%
+  mutate(
+    snpID = str_remove(snpID, ":.$"),
+    snpID = str_replace(snpID, ":", "_")
+  ) %>%
+  separate(snpID, into = c("Locus ID", "Col"), remove = FALSE) %>%
+  mutate_at(vars(`Locus ID`, Col), as.integer) %>%
+  mutate(
+    Col = Col - 1,
+    snpID = paste(`Locus ID`, Col, sep = "_")
+  )
+snpsGR <- makeGRangesFromDataFrame(
+  df = snps, 
+  keep.extra.columns = TRUE, 
+  ignore.strand = TRUE, 
+  seqinfo = seqinfo(ensGenes), 
+  seqnames.field = "chromosome", 
+  start.field = "position", 
+  end.field = "position"
+)
+ensExons <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz") %>%
+    import.gff3(feature.type = "exon", sequenceRegionsAsSeqinfo = TRUE) %>%
+  join_overlap_inner_within(
+    ensGenes, maxgap = 0, minoverlap = 0, suffix = c(".exon", "")
+  ) %>%
+  join_overlap_inner(snpsGR)
+ensExons <- ensExons[,setdiff(colnames(mcols(ensExons)), "Name.exon")]
 ```
 
 
-```{r closeGds}
-seqClose(gdsFile)
+
+```{r d}
+d <- 1e5
+```
+
+```{r sigRanges}
+sigSNPs <- snpsGR %>%
+  subset(
+    snpID %in% (
+      list(
+        allele = alleleResults, 
+        genotype = genotypeResults
+      ) %>% 
+        lapply(dplyr::filter, FDR < 0.05) %>% 
+        lapply(extract2, "snpID") %>% 
+        unlist() %>% 
+        unique()
+    )
+  ) 
+sigRanges <- sigSNPs %>%
+  resize(width = 2*d + 1, fix = "center") %>%
+  trim()
+```
+
+```{r snpsForCor}
+snpsForCor <- snpsGR %>%
+  filter_by_overlaps(sigRanges) %>%
+  join_nearest(sigSNPs) %>%
+  split(f = .$snpID.y) %>%
+  .[sigSNPs$snpID]
+```
+
+```{r snpN}
+countN <- function(x){sum(!is.na(x))}
+samples <- list(
+  ora = dplyr::filter(sampleID, Population == 2012)$Sample,
+  gc = dplyr::filter(sampleID, Population == 1996)$Sample
+)
+snpN <- snpsForCor %>%
+  lapply(function(x){
+    seqSetFilter(
+      gdsFile, 
+      sample.id = unlist(samples), 
+      variant.id = mcols(x)$variant.id.x
+      )
+    gt <- seqGetData(gdsFile, "genotype")
+    seqResetFilter(gdsFile)
+    apply(gt, MARGIN = 3, colSums) %>%
+      set_colnames(mcols(x)$snpID.x) %>%
+      set_rownames(unlist(samples)) %>%
+      as.data.frame() %>%
+      rownames_to_column("Sample") %>%
+      left_join(sampleID) %>%
+      as_tibble() %>%
+      group_by(Population) %>%
+      summarise_at(vars(contains("_")), countN) %>%
+      gather("snpID", "N", -Population) %>%
+      spread("Population", "N") %>%
+      dplyr::rename(N_1996 = `1996`, N_2012 = `2012`)
+  }) %>%
+  bind_rows()
+```
+
+
+```{r cors2012}
+cors <- snpsForCor %>%
+  lapply(function(x){
+    df1 <- snpgdsLDMat(
+      gdsFile,
+      sample.id = samples$gc,
+      snp.id = x$variant.id.x,
+      slide = -1,
+      method = "corr"
+    )$LD %>%
+      set_rownames(x$snpID.x) %>%
+      set_colnames(x$snpID.x) %>%
+      as.data.frame() %>%
+      rownames_to_column("snp1") %>%
+      gather(key = "snp2", value = "corr1996", -snp1) %>%
+      dplyr::filter(
+        snp1 %in% sigSNPs$snpID,
+        snp1 != snp2
+      )
+    df2 <- snpgdsLDMat(
+      gdsFile,
+      sample.id = samples$ora,
+      snp.id = x$variant.id.x,
+      slide = -1,
+      method = "corr"
+    )$LD %>%
+      set_rownames(x$snpID.x) %>%
+      set_colnames(x$snpID.x) %>%
+      as.data.frame() %>%
+      rownames_to_column("snp1") %>%
+      gather(key = "snp2", value = "corr2012", -snp1) %>%
+      dplyr::filter(
+        snp1 %in% sigSNPs$snpID,
+        snp1 != snp2
+      )
+    left_join(df1, df2)
+  }) %>%
+  bind_rows() %>%
+  as_tibble() %>%
+  dplyr::filter(
+    !is.nan(corr2012),
+    !is.nan(corr1996)
+  ) %>%
+  mutate(
+    LD2_1996 = corr1996^2,
+    LD2_2012 = corr2012^2
+  ) %>%
+  left_join(snps, by = c("snp1" = "snpID")) %>%
+  dplyr::select(
+    starts_with("snp"), 
+    starts_with("corr"),
+    starts_with("LD"),
+    variant.id, chromosome, 
+    pos1 = position, 
+    Locus1 = `Locus ID`
+  ) %>%
+  left_join(
+    snps, 
+    by = c("snp2" = "snpID", "chromosome" = "chromosome")
+  ) %>%
+  dplyr::select(
+    chromosome,
+    starts_with("snp"), 
+    starts_with("corr"),
+    starts_with("LD"),    
+    Locus1, Locus2 = `Locus ID`,
+    pos1, pos2 = position
+    ) %>%
+  dplyr::mutate(
+    dist = pos1 - pos2,
+    model = case_when(
+      snp1 %in% dplyr::filter(alleleResults, FDR < 0.05)$snpID &
+        snp1 %in% dplyr::filter(genotypeResults, FDR < 0.05)$snpID ~ "Both",
+      snp1 %in% dplyr::filter(alleleResults, FDR < 0.05)$snpID ~ "Allele",
+      snp1 %in% dplyr::filter(genotypeResults, FDR < 0.05)$snpID ~ "Genotype" 
+    )
+  )
+```
+
+In this analysis, linkage between each significant SNP and those within `r d/1000`kb was investigated.
+As might be expected, linkage would be expected to decrease over the passage of time through recombination, as seen below, where correlations (as indicated by the blue regression line) are trending towards zero.
+SNPs in strong physical linkage before selective pressure from RHDV tended to remain in strong linkage if within the same locus (~100bp).
+
+
+```{r plotCors, fig.cap = "Correlations between pairs of SNPs located within 100kb of the significant SNPs detected in the previous stages. The regression line is shown in blue, with y = x shown in black for reference. SNPs within the same locus are shown in red. Only SNPs identified in >70% of both populations are shown"}
+labFun <- function(x){1 / x}
+cors %>% 
+  mutate(`Same Locus` = Locus1 == Locus2) %>%
+  dplyr::filter(
+    snp1 %in% dplyr::filter(snpN, N_1996 >= 40, N_2012 >= 37)$snpID,
+    snp2 %in% dplyr::filter(snpN, N_1996 >= 40, N_2012 >= 37)$snpID    
+  ) %>%
+  ggplot(aes(corr1996, corr2012)) +
+  geom_point(
+    aes(size = 1 / abs(dist), colour = `Same Locus`), 
+    alpha = 0.5
+  ) +
+  geom_abline(slope = 1) + 
+  geom_smooth(method = "lm", se = FALSE) +
+  scale_size_continuous(
+    labels = labFun, 
+    breaks = c(10^seq(-6, 0)), 
+    trans = "sqrt"
+  ) + 
+  scale_colour_manual(values = c("black", "red")) +
+  labs(
+    x = "Correlation (1996)",
+    y = "Correlation (2012)",
+    size = "Distance (bp)"
+  ) +
+  theme(legend.title.align = 0.5)
+```
+
+Only one pair of SNPs appeared to increase their linkage to 100% post-RHDV (`r cors %>% dplyr::filter(corr2012 ==1, corr1996 != 1, chromosome == "GL018883") %>% dplyr::select(starts_with("snp")) %>% unlist() %>% as.character() %>% pander()`).
+These are at a distance of `r cors %>% dplyr::filter(corr2012 ==1, corr1996 != 1, chromosome == "GL018883") %>% .[["dist"]]`bp away, with the initial snp (3999128_75), being identifed as intronic for the gene *SERPINA6*.
+This putatively linked SNP is also within the coding region for this gene, however this is also intronic.
+It should be noted however, that no exonic SNPs were detected for this gene in any Locus.
+
+### SNPs Within the Same Locus
+
+**NOT FINISHED BEYOND HERE**
+
+```{r}
+knitr::opts_chunk$set(
+  eval = FALSE
+)
+```
+
+
+An addition `r nrow(dplyr::filter(cors, Locus1 == Locus2))` SNPs were found within the same Locus as those detected as significant.
+
+```{r}
+corList <- cors %>%
+  dplyr::filter(
+    Locus1 == Locus2,
+    model != "Genotype"
+    ) %>%
+  dplyr::select(-Locus2) %>%
+  split(f = .$Locus1) 
+```
+
+```{r}
+x <- corList$`321186`
+ids <- dplyr::filter(snps, snpID %in% unlist(x[c("snp1", "snp2")]))$variant.id 
+seqSetFilter(gdsFile, sample.id = samples, variant.id = ids)
+df <- seqGetData(gdsFile, "genotype") %>%
+  apply(3, function(y){
+    colSums(y) 
+  }) %>%
+  set_colnames(filter(snps, variant.id %in% ids)$snpID) %>%
+  as.data.frame() %>%
+  as_tibble() %>%
+  mutate(Sample = samples) %>%
+  left_join(sampleID) %>%
+  gather(key = "snpID", value = "Genotype", -Sample, -Population, -Location) %>%
+  spread(snpID, Genotype)
+df %>%
+  dplyr::select(-Population, -Location) %>%
+  as.data.frame() %>%
+  column_to_rownames("Sample") %>%
+  as.matrix() %>%
+  t() %>%
+  pheatmap(
+    cluster_rows = FALSE,
+    cluster_cols = FALSE, 
+    breaks = seq(0,2)
+  )
+seqResetFilter(gdsFile)
+```
+
+```{r}
+cors %>%
+  dplyr::filter(Locus1 != Locus2, abs(dist) < 40000) %>%
+  dplyr::arrange(abs(dist))
 ```
 
 
 # Session Info
 
-```{r sessionInfo}
+```{r closeGds, eval=TRUE}
+seqClose(gdsFile)
+```
+
+
+```{r sessionInfo, eval=TRUE}
 sessionInfo() %>% pander()
 ```
 
