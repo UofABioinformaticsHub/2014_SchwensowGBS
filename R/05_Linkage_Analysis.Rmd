@@ -64,7 +64,6 @@ sampleID <- tibble(
 Autosomal SNP IDs for the 1996 and 2012 samples were loaded.
 
 ```{r snps}
-seqSetFilterChrom(gdsFile, include = 1:22)
 seqSetFilter(gdsFile, sample.id = sampleID$Sample)
 snps <- tibble(
   variant.id = seqGetData(gdsFile, "variant.id") ,
@@ -92,7 +91,10 @@ For simpler plotting and estimation of decay, only SNPs < 1Mb apart were retaine
 ```{r allLD, results='hide'}
 seqSetFilter(gdsFile, sample.id = sampleID$Sample)
 allLD <- snps %>% 
-  filter(N >= 105) %>% # Only the SNPs identified in > 95% of samples
+  filter(
+    N >= 105, # Only the SNPs identified in > 95% of samples
+    chromosome %in% 1:22
+  ) %>%
   arrange(chromosome, position) %>%
   split(f = .$chromosome) %>%
   lapply(function(x){
@@ -191,39 +193,29 @@ allLD %>%
 
 ## Analysis of Significant SNPs
 
-As the set of SNPs under analysis had been pruned in order to only include one representative SNP in the case of linkage, any SNPs in linkage to the detected SNPs were explored.
-In addition, SNPs in the same locus which were not in linkage were explored.
-Correlations were calculated for each timepoint separately as they may not be expected to be the same at each timepoint.
+```{r d}
+d <- 1e5
+```
 
-```{r linkageSnpSetup, cache=TRUE}
+As the set of SNPs under analysis had been pruned in order to only include one representative SNP in the case of linkage, any SNPs in linkage to the detected SNPs were explored, within `r d/1000`kb.
+As phasing was not possible outside of a given Stack Locus, correlations between genotypes were used as a proxy for linkage.
+Correlations between were calculated for each timepoint separately as they may not be expected to be the same at each timepoint, given the selctive bottleneck applied by RHDV.
+
+```{r linkageSnpSetup}
 alleleResults <- read_tsv("alleleResults.tsv")
 genotypeResults <- read_tsv("genotypeResults.tsv")
-sampleID <- tibble(
-  Sample = seqGetData(gdsFile, "sample.annotation/Sample"),
-  Population = seqGetData(gdsFile, "sample.annotation/Population"),
-  Location = seqGetData(gdsFile, "sample.annotation/Location")
-)
+```
+
+```{r ensGenes, cache=TRUE}
 ensGenes <- file.path(
   "..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz"
 ) %>%
   import.gff3(feature.type = "gene", sequenceRegionsAsSeqinfo = TRUE) %>%
   .[,c("gene_id", "Name", "description")]
-snps <- tibble(
-  variant.id = seqGetData(gdsFile, "variant.id") ,
-  chromosome = seqGetData(gdsFile, "chromosome"),
-  position = seqGetData(gdsFile, "position"),
-  snpID = seqGetData(gdsFile, "annotation/id")
-) %>%
-  mutate(
-    snpID = str_remove(snpID, ":.$"),
-    snpID = str_replace(snpID, ":", "_")
-  ) %>%
-  separate(snpID, into = c("Locus ID", "Col"), remove = FALSE) %>%
-  mutate_at(vars(`Locus ID`, Col), as.integer) %>%
-  mutate(
-    Col = Col - 1,
-    snpID = paste(`Locus ID`, Col, sep = "_")
-  )
+```
+
+
+```{r snpsGR}
 snpsGR <- makeGRangesFromDataFrame(
   df = snps, 
   keep.extra.columns = TRUE, 
@@ -233,6 +225,9 @@ snpsGR <- makeGRangesFromDataFrame(
   start.field = "position", 
   end.field = "position"
 )
+```
+
+```{r ensExons}
 ensExons <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz") %>%
     import.gff3(feature.type = "exon", sequenceRegionsAsSeqinfo = TRUE) %>%
   join_overlap_inner_within(
@@ -242,11 +237,6 @@ ensExons <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3
 ensExons <- ensExons[,setdiff(colnames(mcols(ensExons)), "Name.exon")]
 ```
 
-
-
-```{r d}
-d <- 1e5
-```
 
 ```{r sigRanges}
 sigSNPs <- snpsGR %>%
@@ -307,7 +297,7 @@ snpN <- snpsForCor %>%
 ```
 
 
-```{r cors2012}
+```{r cors}
 cors <- snpsForCor %>%
   lapply(function(x){
     df1 <- snpgdsLDMat(
@@ -387,9 +377,8 @@ cors <- snpsForCor %>%
 ```
 
 In this analysis, linkage between each significant SNP and those within `r d/1000`kb was investigated.
-As might be expected, linkage would be expected to decrease over the passage of time through recombination, as seen below, where correlations (as indicated by the blue regression line) are trending towards zero.
+Under no selective pressure, linkage would be expected to gradually decrease over the passage of time through recombination, as seen below, where correlations (as indicated by the blue regression line) are trending towards zero.
 SNPs in strong physical linkage before selective pressure from RHDV tended to remain in strong linkage if within the same locus (~100bp).
-
 
 ```{r plotCors, fig.cap = "Correlations between pairs of SNPs located within 100kb of the significant SNPs detected in the previous stages. The regression line is shown in blue, with y = x shown in black for reference. SNPs within the same locus are shown in red. Only SNPs identified in >70% of both populations are shown"}
 labFun <- function(x){1 / x}
@@ -420,10 +409,75 @@ cors %>%
   theme(legend.title.align = 0.5)
 ```
 
-Only one pair of SNPs appeared to increase their linkage to 100% post-RHDV (`r cors %>% dplyr::filter(corr2012 ==1, corr1996 != 1, chromosome == "GL018883") %>% dplyr::select(starts_with("snp")) %>% unlist() %>% as.character() %>% pander()`).
-These are at a distance of `r cors %>% dplyr::filter(corr2012 ==1, corr1996 != 1, chromosome == "GL018883") %>% .[["dist"]]`bp away, with the initial snp (3999128_75), being identifed as intronic for the gene *SERPINA6*.
-This putatively linked SNP is also within the coding region for this gene, however this is also intronic.
+
+```{r}
+sigCors <- cors %>%
+  mutate(
+    z1996 = atanh(corr1996), 
+    z2012 = atanh(corr2012)
+    ) %>% 
+  dplyr::select(
+    starts_with("snp"), 
+    chromosome, pos1, dist, 
+    starts_with("corr"), 
+    starts_with("z")
+    ) %>% 
+  left_join(snpN, by = c("snp1" = "snpID")) %>% 
+  left_join(snpN, by = c("snp2" = "snpID")) %>% 
+  rowwise() %>% 
+  mutate(
+    n1996 = min(N_1996.x, N_1996.y), 
+    n2012 = min(N_2012.x, N_2012.y)
+    ) %>% 
+  dplyr::select(-ends_with("x"), -ends_with("y")) %>% 
+  ungroup() %>% 
+  mutate(
+    Z = (z2012 - z1996) / sqrt(1 / (n1996 - 3) + 1 / (n2012 - 3)), 
+    p = pnorm(abs(Z), lower.tail = FALSE)*2, 
+    adjP = p.adjust(p, "fdr")
+    ) %>%
+  dplyr::select(-starts_with("z", FALSE))
+```
+
+```{r}
+sigCors %>% 
+  arrange(p) %>% 
+  dplyr::filter(adjP < 0.05) %>%
+  unite(snps, snp1, snp2, sep = "/") %>%
+  unite(position, chromosome, pos1, sep = ":") %>%
+  dplyr::select(
+    snps, position, 
+    distance = dist,
+    corr1996, corr2012,
+    Z, p, adjP
+  ) %>%
+  arrange(position, distance) %>%
+  pander(
+    caption = "SNPs showing a significant shift in linkage to an FDR of 5%"
+  )
+```
+
+
+### SNPs Showing A Noticeable Increase in Linkage 
+
+```{r}
+sigIncPair <- cors %>% 
+  dplyr::filter(
+    corr2012 == 1, 
+    corr1996 != 1, 
+    chromosome == "GL018883"
+    ) %>% 
+  dplyr::select(starts_with("snp")) %>%
+  unlist() %>% 
+  as.character()
+```
+
+
+Only one pair of SNPs appeared to increase their genotype correlation to 100% post-RHDV (`r pander(sigIncPair)`), from an initial correlation of `r percent(dplyr::filter(cors, snp1 %in% sigIncPair, snp2 %in% sigIncPair)$corr1996)`.
+These are at a distance of `r dplyr::filter(cors, snp1 %in% sigIncPair, snp2 %in% sigIncPair)$dist`bp away, with the initial snp (`r sigIncPair[[1]]`), being identifed as intronic for the gene *SERPINA6*.
+This putatively linked SNP (`r sigIncPair[[2]]`) is also within the coding region for this gene, however this is also intronic.
 It should be noted however, that no exonic SNPs were detected for this gene in any Locus.
+However, it remains possible that this apparent increase in linkage across a plausible distance may be eveidence of selection.
 
 ### SNPs Within the Same Locus
 
