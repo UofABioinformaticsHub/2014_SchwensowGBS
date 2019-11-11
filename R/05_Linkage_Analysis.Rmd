@@ -265,7 +265,7 @@ snpsForCor <- snpsGR %>%
   .[sigSNPs$snpID]
 ```
 
-```{r snpN}
+```{r snpN, results='hide'}
 countN <- function(x){sum(!is.na(x))}
 samples <- list(
   ora = dplyr::filter(sampleID, Population == 2012)$Sample,
@@ -297,7 +297,7 @@ snpN <- snpsForCor %>%
 ```
 
 
-```{r cors}
+```{r cors, results='hide'}
 cors <- snpsForCor %>%
   lapply(function(x){
     df1 <- snpgdsLDMat(
