@@ -364,7 +364,7 @@ summary {
 
 <h1 class="title toc-ignore">Linkage Analysis</h1>
 <h4 class="author">Steve Pederson</h4>
-<h4 class="date">11 November, 2019</h4>
+<h4 class="date">12 November, 2019</h4>
 
 </div>
 
@@ -402,8 +402,6 @@ gdsFile &lt;- seqOpen(gdsPath, readonly = TRUE)</code></pre>
 ) %&gt;%
   filter(Population != 2010)</code></pre>
 <p>Autosomal SNP IDs for the 1996 and 2012 samples were loaded.</p>
-<pre class="r"><code>seqSetFilterChrom(gdsFile, include = 1:22)</code></pre>
-<pre><code>## # of selected variants: 98,809</code></pre>
 <pre class="r"><code>seqSetFilter(gdsFile, sample.id = sampleID$Sample)</code></pre>
 <pre><code>## # of selected samples: 110</code></pre>
 <pre class="r"><code>snps &lt;- tibble(
@@ -427,7 +425,10 @@ seqResetFilter(gdsFile)</code></pre>
 <p>To define the SNPs used for estimation of Linkage Decay, select the 10,000 autosomal SBPs identified in the highest number of idividuals. Here this was set as SNPs identified in &gt;95% of individuals (i.e. &gt; 104). For simpler plotting and estimation of decay, only SNPs &lt; 1Mb apart were retained.</p>
 <pre class="r"><code>seqSetFilter(gdsFile, sample.id = sampleID$Sample)
 allLD &lt;- snps %&gt;% 
-  filter(N &gt;= 105) %&gt;% # Only the SNPs identified in &gt; 95% of samples
+  filter(
+    N &gt;= 105, # Only the SNPs identified in &gt; 95% of samples
+    chromosome %in% 1:22
+  ) %&gt;%
   arrange(chromosome, position) %&gt;%
   split(f = .$chromosome) %&gt;%
   lapply(function(x){
@@ -487,36 +488,16 @@ Linkage decay for distances up to 1Mb. The Hill-Weir decay line is shown in blue
 </div>
 <div id="analysis-of-significant-snps" class="section level2">
 <h2>Analysis of Significant SNPs</h2>
-<p>As the set of SNPs under analysis had been pruned in order to only include one representative SNP in the case of linkage, any SNPs in linkage to the detected SNPs were explored. In addition, SNPs in the same locus which were not in linkage were explored. Correlations were calculated for each timepoint separately as they may not be expected to be the same at each timepoint.</p>
+<pre class="r"><code>d &lt;- 1e5</code></pre>
+<p>As the set of SNPs under analysis had been pruned in order to only include one representative SNP in the case of linkage, any SNPs in linkage to the detected SNPs were explored, within 100kb. As phasing was not possible outside of a given Stack Locus, correlations between genotypes were used as a proxy for linkage. Correlations between were calculated for each timepoint separately as they may not be expected to be the same at each timepoint, given the selctive bottleneck applied by RHDV.</p>
 <pre class="r"><code>alleleResults &lt;- read_tsv(&quot;alleleResults.tsv&quot;)
-genotypeResults &lt;- read_tsv(&quot;genotypeResults.tsv&quot;)
-sampleID &lt;- tibble(
-  Sample = seqGetData(gdsFile, &quot;sample.annotation/Sample&quot;),
-  Population = seqGetData(gdsFile, &quot;sample.annotation/Population&quot;),
-  Location = seqGetData(gdsFile, &quot;sample.annotation/Location&quot;)
-)
-ensGenes &lt;- file.path(
+genotypeResults &lt;- read_tsv(&quot;genotypeResults.tsv&quot;)</code></pre>
+<pre class="r"><code>ensGenes &lt;- file.path(
   &quot;..&quot;, &quot;external&quot;, &quot;Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz&quot;
 ) %&gt;%
   import.gff3(feature.type = &quot;gene&quot;, sequenceRegionsAsSeqinfo = TRUE) %&gt;%
-  .[,c(&quot;gene_id&quot;, &quot;Name&quot;, &quot;description&quot;)]
-snps &lt;- tibble(
-  variant.id = seqGetData(gdsFile, &quot;variant.id&quot;) ,
-  chromosome = seqGetData(gdsFile, &quot;chromosome&quot;),
-  position = seqGetData(gdsFile, &quot;position&quot;),
-  snpID = seqGetData(gdsFile, &quot;annotation/id&quot;)
-) %&gt;%
-  mutate(
-    snpID = str_remove(snpID, &quot;:.$&quot;),
-    snpID = str_replace(snpID, &quot;:&quot;, &quot;_&quot;)
-  ) %&gt;%
-  separate(snpID, into = c(&quot;Locus ID&quot;, &quot;Col&quot;), remove = FALSE) %&gt;%
-  mutate_at(vars(`Locus ID`, Col), as.integer) %&gt;%
-  mutate(
-    Col = Col - 1,
-    snpID = paste(`Locus ID`, Col, sep = &quot;_&quot;)
-  )
-snpsGR &lt;- makeGRangesFromDataFrame(
+  .[,c(&quot;gene_id&quot;, &quot;Name&quot;, &quot;description&quot;)]</code></pre>
+<pre class="r"><code>snpsGR &lt;- makeGRangesFromDataFrame(
   df = snps, 
   keep.extra.columns = TRUE, 
   ignore.strand = TRUE, 
@@ -524,15 +505,14 @@ snpsGR &lt;- makeGRangesFromDataFrame(
   seqnames.field = &quot;chromosome&quot;, 
   start.field = &quot;position&quot;, 
   end.field = &quot;position&quot;
-)
-ensExons &lt;- file.path(&quot;..&quot;, &quot;external&quot;, &quot;Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz&quot;) %&gt;%
+)</code></pre>
+<pre class="r"><code>ensExons &lt;- file.path(&quot;..&quot;, &quot;external&quot;, &quot;Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz&quot;) %&gt;%
     import.gff3(feature.type = &quot;exon&quot;, sequenceRegionsAsSeqinfo = TRUE) %&gt;%
   join_overlap_inner_within(
     ensGenes, maxgap = 0, minoverlap = 0, suffix = c(&quot;.exon&quot;, &quot;&quot;)
   ) %&gt;%
   join_overlap_inner(snpsGR)
 ensExons &lt;- ensExons[,setdiff(colnames(mcols(ensExons)), &quot;Name.exon&quot;)]</code></pre>
-<pre class="r"><code>d &lt;- 1e5</code></pre>
 <pre class="r"><code>sigSNPs &lt;- snpsGR %&gt;%
   subset(
     snpID %in% (
@@ -1210,7 +1190,7 @@ snpN &lt;- snpsForCor %&gt;%
 ## Working space: 53 samples, 22 SNPs
 ##     using 1 (CPU) core.
 ##     method: correlation</code></pre>
-<p>In this analysis, linkage between each significant SNP and those within 100kb was investigated. As might be expected, linkage would be expected to decrease over the passage of time through recombination, as seen below, where correlations (as indicated by the blue regression line) are trending towards zero. SNPs in strong physical linkage before selective pressure from RHDV tended to remain in strong linkage if within the same locus (~100bp).</p>
+<p>In this analysis, linkage between each significant SNP and those within 100kb was investigated. Under no selective pressure, linkage would be expected to gradually decrease over the passage of time through recombination, as seen below, where correlations (as indicated by the blue regression line) are trending towards zero. SNPs in strong physical linkage before selective pressure from RHDV tended to remain in strong linkage if within the same locus (~100bp).</p>
 <pre class="r"><code>labFun &lt;- function(x){1 / x}
 cors %&gt;% 
   mutate(`Same Locus` = Locus1 == Locus2) %&gt;%
@@ -1243,7 +1223,177 @@ cors %&gt;%
 Correlations between pairs of SNPs located within 100kb of the significant SNPs detected in the previous stages. The regression line is shown in blue, with y = x shown in black for reference. SNPs within the same locus are shown in red. Only SNPs identified in &gt;70% of both populations are shown
 </p>
 </div>
-<p>Only one pair of SNPs appeared to increase their linkage to 100% post-RHDV (<em>3999128_75</em> and <em>3999092_67</em>). These are at a distance of 6228bp away, with the initial snp (3999128_75), being identifed as intronic for the gene <em>SERPINA6</em>. This putatively linked SNP is also within the coding region for this gene, however this is also intronic. It should be noted however, that no exonic SNPs were detected for this gene in any Locus.</p>
+<pre class="r"><code>sigCors &lt;- cors %&gt;%
+  mutate(
+    z1996 = atanh(corr1996), 
+    z2012 = atanh(corr2012)
+    ) %&gt;% 
+  dplyr::select(
+    starts_with(&quot;snp&quot;), 
+    chromosome, pos1, dist, 
+    starts_with(&quot;corr&quot;), 
+    starts_with(&quot;z&quot;)
+    ) %&gt;% 
+  left_join(snpN, by = c(&quot;snp1&quot; = &quot;snpID&quot;)) %&gt;% 
+  left_join(snpN, by = c(&quot;snp2&quot; = &quot;snpID&quot;)) %&gt;% 
+  rowwise() %&gt;% 
+  mutate(
+    n1996 = min(N_1996.x, N_1996.y), 
+    n2012 = min(N_2012.x, N_2012.y)
+    ) %&gt;% 
+  dplyr::select(-ends_with(&quot;x&quot;), -ends_with(&quot;y&quot;)) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(
+    Z = (z2012 - z1996) / sqrt(1 / (n1996 - 3) + 1 / (n2012 - 3)), 
+    p = pnorm(abs(Z), lower.tail = FALSE)*2, 
+    adjP = p.adjust(p, &quot;fdr&quot;)
+    ) %&gt;%
+  dplyr::select(-starts_with(&quot;z&quot;, FALSE))</code></pre>
+<pre class="r"><code>sigCors %&gt;% 
+  arrange(p) %&gt;% 
+  dplyr::filter(adjP &lt; 0.05) %&gt;%
+  unite(snps, snp1, snp2, sep = &quot;/&quot;) %&gt;%
+  unite(position, chromosome, pos1, sep = &quot;:&quot;) %&gt;%
+  dplyr::select(
+    snps, position, 
+    distance = dist,
+    corr1996, corr2012,
+    Z, p, adjP
+  ) %&gt;%
+  arrange(position, distance) %&gt;%
+  pander(
+    caption = &quot;SNPs showing a significant shift in linkage to an FDR of 5%&quot;
+  )</code></pre>
+<table>
+<caption>SNPs showing a significant shift in linkage to an FDR of 5%</caption>
+<thead>
+<tr class="header">
+<th align="center">snps</th>
+<th align="center">position</th>
+<th align="center">distance</th>
+<th align="center">corr1996</th>
+<th align="center">corr2012</th>
+<th align="center">Z</th>
+<th align="center">p</th>
+<th align="center">adjP</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">1685466_9/1685466_10</td>
+<td align="center">10:42335759</td>
+<td align="center">-1</td>
+<td align="center">0.9716</td>
+<td align="center">1</td>
+<td align="center">Inf</td>
+<td align="center">0</td>
+<td align="center">0</td>
+</tr>
+<tr class="even">
+<td align="center">2028473_73/2028643_21</td>
+<td align="center">13:2979383</td>
+<td align="center">-74,853</td>
+<td align="center">1</td>
+<td align="center">0.3689</td>
+<td align="center">-Inf</td>
+<td align="center">0</td>
+<td align="center">0</td>
+</tr>
+<tr class="odd">
+<td align="center">2028473_73/2028554_103</td>
+<td align="center">13:2979383</td>
+<td align="center">-38,147</td>
+<td align="center">1</td>
+<td align="center">0.1217</td>
+<td align="center">-Inf</td>
+<td align="center">0</td>
+<td align="center">0</td>
+</tr>
+<tr class="even">
+<td align="center">2028473_73/2028328_88</td>
+<td align="center">13:2979383</td>
+<td align="center">61,716</td>
+<td align="center">1</td>
+<td align="center">0.8997</td>
+<td align="center">-Inf</td>
+<td align="center">0</td>
+<td align="center">0</td>
+</tr>
+<tr class="odd">
+<td align="center">2028473_73/2028328_71</td>
+<td align="center">13:2979383</td>
+<td align="center">61,733</td>
+<td align="center">1</td>
+<td align="center">0.9047</td>
+<td align="center">-Inf</td>
+<td align="center">0</td>
+<td align="center">0</td>
+</tr>
+<tr class="even">
+<td align="center">2405359_66/2405410_23</td>
+<td align="center">14:97813263</td>
+<td align="center">-68,428</td>
+<td align="center">0.2136</td>
+<td align="center">0.7529</td>
+<td align="center">3.382</td>
+<td align="center">0.0007189</td>
+<td align="center">0.03954</td>
+</tr>
+<tr class="odd">
+<td align="center">2405359_66/2405359_68</td>
+<td align="center">14:97813263</td>
+<td align="center">-2</td>
+<td align="center">1</td>
+<td align="center">0.7815</td>
+<td align="center">-Inf</td>
+<td align="center">0</td>
+<td align="center">0</td>
+</tr>
+<tr class="even">
+<td align="center">482617_100/482653_14</td>
+<td align="center">2:139723776</td>
+<td align="center">-14,534</td>
+<td align="center">-0.3801</td>
+<td align="center">0.3105</td>
+<td align="center">3.325</td>
+<td align="center">0.0008847</td>
+<td align="center">0.04379</td>
+</tr>
+<tr class="odd">
+<td align="center">3999128_75/3999128_70</td>
+<td align="center">GL018883:283912</td>
+<td align="center">5</td>
+<td align="center">0.9388</td>
+<td align="center">0.7354</td>
+<td align="center">-3.883</td>
+<td align="center">0.0001032</td>
+<td align="center">0.006384</td>
+</tr>
+<tr class="even">
+<td align="center">3999128_75/3999092_67</td>
+<td align="center">GL018883:283912</td>
+<td align="center">6,228</td>
+<td align="center">0.6231</td>
+<td align="center">1</td>
+<td align="center">Inf</td>
+<td align="center">0</td>
+<td align="center">0</td>
+</tr>
+</tbody>
+</table>
+<div id="snps-showing-a-noticeable-increase-in-linkage" class="section level3">
+<h3>SNPs Showing A Noticeable Increase in Linkage</h3>
+<pre class="r"><code>sigIncPair &lt;- cors %&gt;% 
+  dplyr::filter(
+    corr2012 == 1, 
+    corr1996 != 1, 
+    chromosome == &quot;GL018883&quot;
+    ) %&gt;% 
+  dplyr::select(starts_with(&quot;snp&quot;)) %&gt;%
+  unlist() %&gt;% 
+  as.character()</code></pre>
+<p>Only one pair of SNPs appeared to increase their genotype correlation to 100% post-RHDV (<em>3999128_75</em> and <em>3999092_67</em>), from an initial correlation of 62.3%. These are at a distance of 6228bp away, with the initial snp (3999128_75), being identifed as intronic for the gene <em>SERPINA6</em>. This putatively linked SNP (3999092_67) is also within the coding region for this gene, however this is also intronic. It should be noted however, that no exonic SNPs were detected for this gene in any Locus. However, it remains possible that this apparent increase in linkage across a plausible distance may be eveidence of selection.</p>
+</div>
 <div id="snps-within-the-same-locus" class="section level3">
 <h3>SNPs Within the Same Locus</h3>
 <p><strong>NOT FINISHED BEYOND HERE</strong></p>
@@ -1298,7 +1448,7 @@ seqResetFilter(gdsFile)</code></pre>
 <p><strong>locale:</strong> <em>LC_CTYPE=en_AU.UTF-8</em>, <em>LC_NUMERIC=C</em>, <em>LC_TIME=en_AU.UTF-8</em>, <em>LC_COLLATE=en_AU.UTF-8</em>, <em>LC_MONETARY=en_AU.UTF-8</em>, <em>LC_MESSAGES=en_AU.UTF-8</em>, <em>LC_PAPER=en_AU.UTF-8</em>, <em>LC_NAME=C</em>, <em>LC_ADDRESS=C</em>, <em>LC_TELEPHONE=C</em>, <em>LC_MEASUREMENT=en_AU.UTF-8</em> and <em>LC_IDENTIFICATION=C</em></p>
 <p><strong>attached base packages:</strong> <em>stats4</em>, <em>parallel</em>, <em>stats</em>, <em>graphics</em>, <em>grDevices</em>, <em>utils</em>, <em>datasets</em>, <em>methods</em> and <em>base</em></p>
 <p><strong>other attached packages:</strong> <em>rtracklayer(v.1.44.4)</em>, <em>plyranges(v.1.4.3)</em>, <em>GenomicRanges(v.1.36.1)</em>, <em>GenomeInfoDb(v.1.20.0)</em>, <em>IRanges(v.2.18.2)</em>, <em>S4Vectors(v.0.22.1)</em>, <em>BiocGenerics(v.0.30.0)</em>, <em>forcats(v.0.4.0)</em>, <em>stringr(v.1.4.0)</em>, <em>dplyr(v.0.8.3)</em>, <em>purrr(v.0.3.2)</em>, <em>readr(v.1.3.1)</em>, <em>tidyr(v.0.8.3)</em>, <em>tibble(v.2.1.3)</em>, <em>ggplot2(v.3.2.1)</em>, <em>tidyverse(v.1.2.1)</em>, <em>magrittr(v.1.5)</em>, <em>scales(v.1.0.0)</em>, <em>pander(v.0.6.3)</em>, <em>SNPRelate(v.1.18.1)</em>, <em>SeqArray(v.1.24.2)</em> and <em>gdsfmt(v.1.20.0)</em></p>
-<p><strong>loaded via a namespace (and not attached):</strong> <em>Biobase(v.2.44.0)</em>, <em>httr(v.1.4.1)</em>, <em>jsonlite(v.1.6)</em>, <em>modelr(v.0.1.5)</em>, <em>assertthat(v.0.2.1)</em>, <em>highr(v.0.8)</em>, <em>GenomeInfoDbData(v.1.2.1)</em>, <em>cellranger(v.1.1.0)</em>, <em>Rsamtools(v.2.0.0)</em>, <em>yaml(v.2.2.0)</em>, <em>pillar(v.1.4.2)</em>, <em>backports(v.1.1.4)</em>, <em>lattice(v.0.20-38)</em>, <em>glue(v.1.3.1)</em>, <em>digest(v.0.6.20)</em>, <em>XVector(v.0.24.0)</em>, <em>rvest(v.0.3.4)</em>, <em>colorspace(v.1.4-1)</em>, <em>htmltools(v.0.3.6)</em>, <em>Matrix(v.1.2-17)</em>, <em>XML(v.3.98-1.20)</em>, <em>pkgconfig(v.2.0.2)</em>, <em>broom(v.0.5.2)</em>, <em>haven(v.2.1.1)</em>, <em>zlibbioc(v.1.30.0)</em>, <em>BiocParallel(v.1.18.1)</em>, <em>generics(v.0.0.2)</em>, <em>withr(v.2.1.2)</em>, <em>SummarizedExperiment(v.1.14.1)</em>, <em>lazyeval(v.0.2.2)</em>, <em>cli(v.1.1.0)</em>, <em>crayon(v.1.3.4)</em>, <em>readxl(v.1.3.1)</em>, <em>evaluate(v.0.14)</em>, <em>nlme(v.3.1-141)</em>, <em>xml2(v.1.2.2)</em>, <em>tools(v.3.6.1)</em>, <em>hms(v.0.5.1)</em>, <em>matrixStats(v.0.55.0)</em>, <em>munsell(v.0.5.0)</em>, <em>DelayedArray(v.0.10.0)</em>, <em>Biostrings(v.2.52.0)</em>, <em>compiler(v.3.6.1)</em>, <em>rlang(v.0.4.0)</em>, <em>grid(v.3.6.1)</em>, <em>RCurl(v.1.95-4.12)</em>, <em>rstudioapi(v.0.10)</em>, <em>bitops(v.1.0-6)</em>, <em>labeling(v.0.3)</em>, <em>rmarkdown(v.1.15)</em>, <em>gtable(v.0.3.0)</em>, <em>R6(v.2.4.0)</em>, <em>GenomicAlignments(v.1.20.1)</em>, <em>lubridate(v.1.7.4)</em>, <em>knitr(v.1.24)</em>, <em>zeallot(v.0.1.0)</em>, <em>stringi(v.1.4.3)</em>, <em>Rcpp(v.1.0.2)</em>, <em>vctrs(v.0.2.0)</em>, <em>tidyselect(v.0.2.5)</em> and <em>xfun(v.0.9)</em></p>
+<p><strong>loaded via a namespace (and not attached):</strong> <em>Biobase(v.2.44.0)</em>, <em>httr(v.1.4.1)</em>, <em>jsonlite(v.1.6)</em>, <em>modelr(v.0.1.5)</em>, <em>assertthat(v.0.2.1)</em>, <em>highr(v.0.8)</em>, <em>GenomeInfoDbData(v.1.2.1)</em>, <em>cellranger(v.1.1.0)</em>, <em>Rsamtools(v.2.0.0)</em>, <em>yaml(v.2.2.0)</em>, <em>pillar(v.1.4.2)</em>, <em>backports(v.1.1.4)</em>, <em>lattice(v.0.20-38)</em>, <em>glue(v.1.3.1)</em>, <em>digest(v.0.6.20)</em>, <em>XVector(v.0.24.0)</em>, <em>rvest(v.0.3.4)</em>, <em>colorspace(v.1.4-1)</em>, <em>htmltools(v.0.3.6)</em>, <em>Matrix(v.1.2-17)</em>, <em>XML(v.3.98-1.20)</em>, <em>pkgconfig(v.2.0.2)</em>, <em>broom(v.0.5.2)</em>, <em>haven(v.2.1.1)</em>, <em>zlibbioc(v.1.30.0)</em>, <em>BiocParallel(v.1.18.1)</em>, <em>generics(v.0.0.2)</em>, <em>withr(v.2.1.2)</em>, <em>SummarizedExperiment(v.1.14.1)</em>, <em>lazyeval(v.0.2.2)</em>, <em>cli(v.1.1.0)</em>, <em>crayon(v.1.3.4)</em>, <em>readxl(v.1.3.1)</em>, <em>evaluate(v.0.14)</em>, <em>nlme(v.3.1-141)</em>, <em>xml2(v.1.2.2)</em>, <em>tools(v.3.6.1)</em>, <em>hms(v.0.5.1)</em>, <em>matrixStats(v.0.55.0)</em>, <em>munsell(v.0.5.0)</em>, <em>DelayedArray(v.0.10.0)</em>, <em>Biostrings(v.2.52.0)</em>, <em>compiler(v.3.6.1)</em>, <em>rlang(v.0.4.0)</em>, <em>grid(v.3.6.1)</em>, <em>RCurl(v.1.95-4.12)</em>, <em>rstudioapi(v.0.10)</em>, <em>bitops(v.1.0-6)</em>, <em>labeling(v.0.3)</em>, <em>rmarkdown(v.1.15)</em>, <em>codetools(v.0.2-16)</em>, <em>gtable(v.0.3.0)</em>, <em>R6(v.2.4.0)</em>, <em>GenomicAlignments(v.1.20.1)</em>, <em>lubridate(v.1.7.4)</em>, <em>knitr(v.1.24)</em>, <em>zeallot(v.0.1.0)</em>, <em>stringi(v.1.4.3)</em>, <em>Rcpp(v.1.0.2)</em>, <em>vctrs(v.0.2.0)</em>, <em>tidyselect(v.0.2.5)</em> and <em>xfun(v.0.9)</em></p>
 </div>
 
 
