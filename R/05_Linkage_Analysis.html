@@ -364,14 +364,18 @@ summary {
 
 <h1 class="title toc-ignore">Linkage Analysis</h1>
 <h4 class="author">Steve Pederson</h4>
-<h4 class="date">12 November, 2019</h4>
+<h4 class="date">28 November, 2019</h4>
 
 </div>
 
 <div id="TOC">
 <ul>
 <li><a href="#linkage-analysis">Linkage Analysis</a></li>
-<li><a href="#analysis-of-significant-snps">Analysis of Significant SNPs</a></li>
+<li><a href="#analysis-of-significant-snps">Analysis of Significant SNPs</a><ul>
+<li><a href="#snps-showing-a-noticeable-increase-in-linkage">SNPs Showing A Noticeable Increase in Linkage</a></li>
+<li><a href="#snps-showing-a-noticeable-decrease-in-linkage">SNPs Showing A Noticeable Decrease in Linkage</a></li>
+<li><a href="#snps-within-the-same-locus">SNPs Within the Same Locus</a></li>
+</ul></li>
 <li><a href="#session-info">Session Info</a></li>
 </ul>
 </div>
@@ -693,27 +697,16 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
   ungroup() %&gt;% 
   mutate(
     Z = (z2012 - z1996) / sqrt(1 / (n1996 - 3) + 1 / (n2012 - 3)), 
-    p = pnorm(abs(Z), lower.tail = FALSE)*2, 
+    p = case_when(
+      !is.nan(Z) ~ pnorm(abs(Z), lower.tail = FALSE)*2, 
+      is.nan(Z) ~ 1
+    ),
     adjP = p.adjust(p, &quot;fdr&quot;)
     ) %&gt;%
   dplyr::select(-starts_with(&quot;z&quot;, FALSE))</code></pre>
-<pre class="r"><code>sigCors %&gt;% 
-  arrange(p) %&gt;% 
-  dplyr::filter(adjP &lt; 0.05) %&gt;%
-  unite(snps, snp1, snp2, sep = &quot;/&quot;) %&gt;%
-  unite(position, chromosome, pos1, sep = &quot;:&quot;) %&gt;%
-  dplyr::select(
-    snps, position, 
-    distance = dist,
-    corr1996, corr2012,
-    Z, p, adjP
-  ) %&gt;%
-  arrange(position, distance) %&gt;%
-  pander(
-    caption = &quot;SNPs showing a significant shift in linkage to an FDR of 5%&quot;
-  )</code></pre>
+<p>Correlations were converted to Z scores using Fisher’s transformation and tests for a significant change were conducted. P-values were adjusted using the Benjamini-Hochbers False-Discovery Rate, giving 10 SNPs with significantly changed correlations.</p>
 <table>
-<caption>SNPs showing a significant shift in linkage to an FDR of 5%</caption>
+<caption>SNPs showing a significant shift in linkage to an FDR of 5%. The position given corresponds to the SNP considered as potentially impacted by RHDV selection, whilst the the distance refers to the SNP where linkage has been potentially impacted by RHDV selection</caption>
 <thead>
 <tr class="header">
 <th align="center">snps</th>
@@ -721,7 +714,6 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <th align="center">distance</th>
 <th align="center">corr1996</th>
 <th align="center">corr2012</th>
-<th align="center">Z</th>
 <th align="center">p</th>
 <th align="center">adjP</th>
 </tr>
@@ -733,7 +725,6 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">-1</td>
 <td align="center">0.9716</td>
 <td align="center">1</td>
-<td align="center">Inf</td>
 <td align="center">0</td>
 <td align="center">0</td>
 </tr>
@@ -743,7 +734,6 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">-74,853</td>
 <td align="center">1</td>
 <td align="center">0.3689</td>
-<td align="center">-Inf</td>
 <td align="center">0</td>
 <td align="center">0</td>
 </tr>
@@ -753,7 +743,6 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">-38,147</td>
 <td align="center">1</td>
 <td align="center">0.1217</td>
-<td align="center">-Inf</td>
 <td align="center">0</td>
 <td align="center">0</td>
 </tr>
@@ -763,7 +752,6 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">61,716</td>
 <td align="center">1</td>
 <td align="center">0.8997</td>
-<td align="center">-Inf</td>
 <td align="center">0</td>
 <td align="center">0</td>
 </tr>
@@ -773,7 +761,6 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">61,733</td>
 <td align="center">1</td>
 <td align="center">0.9047</td>
-<td align="center">-Inf</td>
 <td align="center">0</td>
 <td align="center">0</td>
 </tr>
@@ -783,9 +770,8 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">-68,428</td>
 <td align="center">0.2136</td>
 <td align="center">0.7529</td>
-<td align="center">3.382</td>
 <td align="center">0.0007189</td>
-<td align="center">0.03954</td>
+<td align="center">0.04034</td>
 </tr>
 <tr class="odd">
 <td align="center">2405359_66/2405359_68</td>
@@ -793,7 +779,6 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">-2</td>
 <td align="center">1</td>
 <td align="center">0.7815</td>
-<td align="center">-Inf</td>
 <td align="center">0</td>
 <td align="center">0</td>
 </tr>
@@ -803,9 +788,8 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">-14,534</td>
 <td align="center">-0.3801</td>
 <td align="center">0.3105</td>
-<td align="center">3.325</td>
 <td align="center">0.0008847</td>
-<td align="center">0.04379</td>
+<td align="center">0.04468</td>
 </tr>
 <tr class="odd">
 <td align="center">3999128_75/3999128_70</td>
@@ -813,9 +797,8 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">5</td>
 <td align="center">0.9388</td>
 <td align="center">0.7354</td>
-<td align="center">-3.883</td>
 <td align="center">0.0001032</td>
-<td align="center">0.006384</td>
+<td align="center">0.006513</td>
 </tr>
 <tr class="even">
 <td align="center">3999128_75/3999092_67</td>
@@ -823,7 +806,6 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
 <td align="center">6,228</td>
 <td align="center">0.6231</td>
 <td align="center">1</td>
-<td align="center">Inf</td>
 <td align="center">0</td>
 <td align="center">0</td>
 </tr>
@@ -840,11 +822,330 @@ Correlations between pairs of SNPs located within 100kb of the significant SNPs 
   dplyr::select(starts_with(&quot;snp&quot;)) %&gt;%
   unlist() %&gt;% 
   as.character()</code></pre>
-<p>Only one pair of SNPs appeared to increase their genotype correlation to 100% post-RHDV (<em>3999128_75</em> and <em>3999092_67</em>), from an initial correlation of 62.3%. These are at a distance of 6228bp away, with the initial snp (3999128_75), being identifed as intronic for the gene <em>SERPINA6</em>. This putatively linked SNP (3999092_67) is also within the coding region for this gene, however this is also intronic. It should be noted however, that no exonic SNPs were detected for this gene in any Locus. However, it remains possible that this apparent increase in linkage across a plausible distance may be eveidence of selection.</p>
+<p>Only one pair of SNPs appeared to increase their genotype correlation to 100% post-RHDV (<em>3999128_75</em> and <em>3999092_67</em>), from an initial correlation of 62%. These are at a distance of 6228bp away, with the initial snp (3999128_75), being identifed as intronic for the gene <em>SERPINA6</em>. This putatively linked SNP (3999092_67) is also within the coding region for this gene, however this is also intronic. It should be noted however, that no exonic SNPs were detected for this gene in any Locus. However, it remains possible that this apparent increase in linkage across a plausible distance may be evidence of selection.</p>
+<p>One further SNP pair showed a noticeable increase in linkage (2405359_66/2405410_23), with both of these SNPs being intronic within ENSOCUG00000005835 (<em>STXBP5L</em>). This SNP showed a signifcant increase in the MAF (1996 - 0.021; 2012 - 0.202) and this relatively low frequency does explain some of the apparent decrease in correlation for the SNP within the same locus (2405359_68).</p>
+<p>One SNP pair switched from a negative correlation to a positive correlation, which given the strong shift towards the homozygous genotype for the major allele, may again appear consistent with selection. These SNPs are both within 20kb of the gene <em>RHOQ</em>, which along with <em>STXBP5L</em> has been connected to insulin secretion &amp; the related response. No obvious link can be drawn to any insulin-related pathways at this point</p>
+</div>
+<div id="snps-showing-a-noticeable-decrease-in-linkage" class="section level3">
+<h3>SNPs Showing A Noticeable Decrease in Linkage</h3>
+<p>In addition to the above SNPs, four SNPs around 2028473_73 (13:2979383) were detected as having a significant decrease in linkage. It may be postulated that this is evidence of diversifying selection, and this may be additionally supported by the observation of an increase in the minor allele frquency at this locus in the post-RHDV population. In addition, the lower 2012 correlations upstream of this SNP, compared to the downstream SNPs may indicate selection acting on a region more distal. Whilst no genes defined in Ensembl 96 were within 100kb of this SNP, a Genscan predicted transcript (GENSCAN00000009622.1) directly overlapped this gene, and the predicted cDNA shared some similarity with <em>tenascin R</em> from <em>Gorilla gorilla</em> (11% cover; 92% identity; E = 3e-43).</p>
 </div>
 <div id="snps-within-the-same-locus" class="section level3">
 <h3>SNPs Within the Same Locus</h3>
 <p><strong>NOT FINISHED BEYOND HERE</strong></p>
+<table>
+<caption>Correlations between SNPs within the same loci as candidate SNPs detected earlier.</caption>
+<thead>
+<tr class="header">
+<th align="center">chromosome</th>
+<th align="center">snp1</th>
+<th align="center">snp2</th>
+<th align="center">pos1</th>
+<th align="center">dist</th>
+<th align="center">corr1996</th>
+<th align="center">corr2012</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">7</td>
+<td align="center">1045185_75</td>
+<td align="center">1045185_38</td>
+<td align="center">2,702,919</td>
+<td align="center">37</td>
+<td align="center">0.6389</td>
+<td align="center">0.2594</td>
+</tr>
+<tr class="even">
+<td align="center">7</td>
+<td align="center">1045185_75</td>
+<td align="center">1045185_52</td>
+<td align="center">2,702,919</td>
+<td align="center">23</td>
+<td align="center">0.6389</td>
+<td align="center">0.2594</td>
+</tr>
+<tr class="odd">
+<td align="center">7</td>
+<td align="center">1045185_75</td>
+<td align="center">1045185_65</td>
+<td align="center">2,702,919</td>
+<td align="center">10</td>
+<td align="center">-0.3205</td>
+<td align="center">-0.0533</td>
+</tr>
+<tr class="even">
+<td align="center">7</td>
+<td align="center">1045185_75</td>
+<td align="center">1045185_72</td>
+<td align="center">2,702,919</td>
+<td align="center">3</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="odd">
+<td align="center">7</td>
+<td align="center">1045185_75</td>
+<td align="center">1045185_76</td>
+<td align="center">2,702,919</td>
+<td align="center">-1</td>
+<td align="center">0.6389</td>
+<td align="center">0.2564</td>
+</tr>
+<tr class="even">
+<td align="center">7</td>
+<td align="center">1045185_75</td>
+<td align="center">1045185_77</td>
+<td align="center">2,702,919</td>
+<td align="center">-2</td>
+<td align="center">0.6389</td>
+<td align="center">0.2594</td>
+</tr>
+<tr class="odd">
+<td align="center">10</td>
+<td align="center">1685466_9</td>
+<td align="center">1685466_10</td>
+<td align="center">42,335,759</td>
+<td align="center">-1</td>
+<td align="center">0.9716</td>
+<td align="center">1</td>
+</tr>
+<tr class="even">
+<td align="center">10</td>
+<td align="center">1685466_9</td>
+<td align="center">1685466_42</td>
+<td align="center">42,335,759</td>
+<td align="center">-33</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="odd">
+<td align="center">13</td>
+<td align="center">2028473_73</td>
+<td align="center">2028473_46</td>
+<td align="center">2,979,383</td>
+<td align="center">27</td>
+<td align="center">0.1816</td>
+<td align="center">0.5662</td>
+</tr>
+<tr class="even">
+<td align="center">14</td>
+<td align="center">2405359_66</td>
+<td align="center">2405359_68</td>
+<td align="center">97,813,263</td>
+<td align="center">-2</td>
+<td align="center">1</td>
+<td align="center">0.7815</td>
+</tr>
+<tr class="odd">
+<td align="center">14</td>
+<td align="center">2405359_66</td>
+<td align="center">2405359_83</td>
+<td align="center">97,813,263</td>
+<td align="center">-17</td>
+<td align="center">0.8074</td>
+<td align="center">0.9114</td>
+</tr>
+<tr class="even">
+<td align="center">14</td>
+<td align="center">2465104_19</td>
+<td align="center">2465104_7</td>
+<td align="center">157,742,593</td>
+<td align="center">12</td>
+<td align="center">-0.3328</td>
+<td align="center">-0.3762</td>
+</tr>
+<tr class="odd">
+<td align="center">15</td>
+<td align="center">2527760_104</td>
+<td align="center">2527760_40</td>
+<td align="center">43,156,117</td>
+<td align="center">64</td>
+<td align="center">-0.4977</td>
+<td align="center">-0.7283</td>
+</tr>
+<tr class="even">
+<td align="center">15</td>
+<td align="center">2527760_104</td>
+<td align="center">2527760_90</td>
+<td align="center">43,156,117</td>
+<td align="center">14</td>
+<td align="center">-0.6523</td>
+<td align="center">-0.7776</td>
+</tr>
+<tr class="odd">
+<td align="center">18</td>
+<td align="center">2906428_79</td>
+<td align="center">2906428_42</td>
+<td align="center">25,311,176</td>
+<td align="center">37</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="even">
+<td align="center">18</td>
+<td align="center">2906428_79</td>
+<td align="center">2906428_49</td>
+<td align="center">25,311,176</td>
+<td align="center">30</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="odd">
+<td align="center">18</td>
+<td align="center">2906428_79</td>
+<td align="center">2906428_55</td>
+<td align="center">25,311,176</td>
+<td align="center">24</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="even">
+<td align="center">18</td>
+<td align="center">2906428_79</td>
+<td align="center">2906428_56</td>
+<td align="center">25,311,176</td>
+<td align="center">23</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="odd">
+<td align="center">18</td>
+<td align="center">2906428_79</td>
+<td align="center">2906428_65</td>
+<td align="center">25,311,176</td>
+<td align="center">14</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="even">
+<td align="center">GL018751</td>
+<td align="center">3695415_108</td>
+<td align="center">3695415_14</td>
+<td align="center">737,318</td>
+<td align="center">94</td>
+<td align="center">-0.236</td>
+<td align="center">-0.1945</td>
+</tr>
+<tr class="odd">
+<td align="center">GL018751</td>
+<td align="center">3695415_108</td>
+<td align="center">3695415_111</td>
+<td align="center">737,318</td>
+<td align="center">-3</td>
+<td align="center">-0.1755</td>
+<td align="center">-0.1774</td>
+</tr>
+<tr class="even">
+<td align="center">GL018751</td>
+<td align="center">3695415_108</td>
+<td align="center">3695415_112</td>
+<td align="center">737,318</td>
+<td align="center">-4</td>
+<td align="center">-0.1834</td>
+<td align="center">-0.1729</td>
+</tr>
+<tr class="odd">
+<td align="center">GL018751</td>
+<td align="center">3695415_108</td>
+<td align="center">3695415_113</td>
+<td align="center">737,318</td>
+<td align="center">-5</td>
+<td align="center">-0.2198</td>
+<td align="center">-0.1729</td>
+</tr>
+<tr class="even">
+<td align="center">GL018751</td>
+<td align="center">3695415_108</td>
+<td align="center">3695415_126</td>
+<td align="center">737,318</td>
+<td align="center">-18</td>
+<td align="center">-0.1834</td>
+<td align="center">-0.1729</td>
+</tr>
+<tr class="odd">
+<td align="center">GL018751</td>
+<td align="center">3695415_108</td>
+<td align="center">3695415_157</td>
+<td align="center">737,318</td>
+<td align="center">-49</td>
+<td align="center">-0.1755</td>
+<td align="center">-0.1754</td>
+</tr>
+<tr class="even">
+<td align="center">GL018791</td>
+<td align="center">3829050_109</td>
+<td align="center">3829050_58</td>
+<td align="center">957,960</td>
+<td align="center">51</td>
+<td align="center">-0.2907</td>
+<td align="center">-0.08085</td>
+</tr>
+<tr class="odd">
+<td align="center">GL018791</td>
+<td align="center">3829050_109</td>
+<td align="center">3829050_80</td>
+<td align="center">957,960</td>
+<td align="center">29</td>
+<td align="center">-0.1149</td>
+<td align="center">-0.1118</td>
+</tr>
+<tr class="even">
+<td align="center">GL018883</td>
+<td align="center">3999128_75</td>
+<td align="center">3999128_61</td>
+<td align="center">283,912</td>
+<td align="center">14</td>
+<td align="center">-0.1415</td>
+<td align="center">0</td>
+</tr>
+<tr class="odd">
+<td align="center">GL018883</td>
+<td align="center">3999128_75</td>
+<td align="center">3999128_70</td>
+<td align="center">283,912</td>
+<td align="center">5</td>
+<td align="center">0.9388</td>
+<td align="center">0.7354</td>
+</tr>
+<tr class="even">
+<td align="center">GL018933</td>
+<td align="center">4044777_119</td>
+<td align="center">4044777_12</td>
+<td align="center">204,058</td>
+<td align="center">107</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="odd">
+<td align="center">GL018933</td>
+<td align="center">4044777_119</td>
+<td align="center">4044777_36</td>
+<td align="center">204,058</td>
+<td align="center">83</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="even">
+<td align="center">GL018933</td>
+<td align="center">4044777_119</td>
+<td align="center">4044777_50</td>
+<td align="center">204,058</td>
+<td align="center">69</td>
+<td align="center">1</td>
+<td align="center">1</td>
+</tr>
+<tr class="odd">
+<td align="center">GL019154</td>
+<td align="center">4176850_23</td>
+<td align="center">4176850_49</td>
+<td align="center">883</td>
+<td align="center">26</td>
+<td align="center">0.4026</td>
+<td align="center">0.02422</td>
+</tr>
+</tbody>
+</table>
 <pre class="r"><code>knitr::opts_chunk$set(
   eval = FALSE
 )</code></pre>
@@ -895,8 +1196,8 @@ seqResetFilter(gdsFile)</code></pre>
 <p><strong>Platform:</strong> x86_64-pc-linux-gnu (64-bit)</p>
 <p><strong>locale:</strong> <em>LC_CTYPE=en_AU.UTF-8</em>, <em>LC_NUMERIC=C</em>, <em>LC_TIME=en_AU.UTF-8</em>, <em>LC_COLLATE=en_AU.UTF-8</em>, <em>LC_MONETARY=en_AU.UTF-8</em>, <em>LC_MESSAGES=en_AU.UTF-8</em>, <em>LC_PAPER=en_AU.UTF-8</em>, <em>LC_NAME=C</em>, <em>LC_ADDRESS=C</em>, <em>LC_TELEPHONE=C</em>, <em>LC_MEASUREMENT=en_AU.UTF-8</em> and <em>LC_IDENTIFICATION=C</em></p>
 <p><strong>attached base packages:</strong> <em>stats4</em>, <em>parallel</em>, <em>stats</em>, <em>graphics</em>, <em>grDevices</em>, <em>utils</em>, <em>datasets</em>, <em>methods</em> and <em>base</em></p>
-<p><strong>other attached packages:</strong> <em>rtracklayer(v.1.44.4)</em>, <em>plyranges(v.1.4.3)</em>, <em>GenomicRanges(v.1.36.1)</em>, <em>GenomeInfoDb(v.1.20.0)</em>, <em>IRanges(v.2.18.2)</em>, <em>S4Vectors(v.0.22.1)</em>, <em>BiocGenerics(v.0.30.0)</em>, <em>forcats(v.0.4.0)</em>, <em>stringr(v.1.4.0)</em>, <em>dplyr(v.0.8.3)</em>, <em>purrr(v.0.3.2)</em>, <em>readr(v.1.3.1)</em>, <em>tidyr(v.0.8.3)</em>, <em>tibble(v.2.1.3)</em>, <em>ggplot2(v.3.2.1)</em>, <em>tidyverse(v.1.2.1)</em>, <em>magrittr(v.1.5)</em>, <em>scales(v.1.0.0)</em>, <em>pander(v.0.6.3)</em>, <em>SNPRelate(v.1.18.1)</em>, <em>SeqArray(v.1.24.2)</em> and <em>gdsfmt(v.1.20.0)</em></p>
-<p><strong>loaded via a namespace (and not attached):</strong> <em>Biobase(v.2.44.0)</em>, <em>httr(v.1.4.1)</em>, <em>jsonlite(v.1.6)</em>, <em>modelr(v.0.1.5)</em>, <em>assertthat(v.0.2.1)</em>, <em>highr(v.0.8)</em>, <em>GenomeInfoDbData(v.1.2.1)</em>, <em>cellranger(v.1.1.0)</em>, <em>Rsamtools(v.2.0.0)</em>, <em>yaml(v.2.2.0)</em>, <em>pillar(v.1.4.2)</em>, <em>backports(v.1.1.4)</em>, <em>lattice(v.0.20-38)</em>, <em>glue(v.1.3.1)</em>, <em>digest(v.0.6.20)</em>, <em>XVector(v.0.24.0)</em>, <em>rvest(v.0.3.4)</em>, <em>colorspace(v.1.4-1)</em>, <em>htmltools(v.0.3.6)</em>, <em>Matrix(v.1.2-17)</em>, <em>XML(v.3.98-1.20)</em>, <em>pkgconfig(v.2.0.2)</em>, <em>broom(v.0.5.2)</em>, <em>haven(v.2.1.1)</em>, <em>zlibbioc(v.1.30.0)</em>, <em>BiocParallel(v.1.18.1)</em>, <em>generics(v.0.0.2)</em>, <em>withr(v.2.1.2)</em>, <em>SummarizedExperiment(v.1.14.1)</em>, <em>lazyeval(v.0.2.2)</em>, <em>cli(v.1.1.0)</em>, <em>crayon(v.1.3.4)</em>, <em>readxl(v.1.3.1)</em>, <em>evaluate(v.0.14)</em>, <em>nlme(v.3.1-141)</em>, <em>xml2(v.1.2.2)</em>, <em>tools(v.3.6.1)</em>, <em>hms(v.0.5.1)</em>, <em>matrixStats(v.0.55.0)</em>, <em>munsell(v.0.5.0)</em>, <em>DelayedArray(v.0.10.0)</em>, <em>Biostrings(v.2.52.0)</em>, <em>compiler(v.3.6.1)</em>, <em>rlang(v.0.4.0)</em>, <em>grid(v.3.6.1)</em>, <em>RCurl(v.1.95-4.12)</em>, <em>rstudioapi(v.0.10)</em>, <em>bitops(v.1.0-6)</em>, <em>labeling(v.0.3)</em>, <em>rmarkdown(v.1.15)</em>, <em>gtable(v.0.3.0)</em>, <em>R6(v.2.4.0)</em>, <em>GenomicAlignments(v.1.20.1)</em>, <em>lubridate(v.1.7.4)</em>, <em>knitr(v.1.24)</em>, <em>zeallot(v.0.1.0)</em>, <em>stringi(v.1.4.3)</em>, <em>Rcpp(v.1.0.2)</em>, <em>vctrs(v.0.2.0)</em>, <em>tidyselect(v.0.2.5)</em> and <em>xfun(v.0.9)</em></p>
+<p><strong>other attached packages:</strong> <em>rtracklayer(v.1.46.0)</em>, <em>plyranges(v.1.6.3)</em>, <em>GenomicRanges(v.1.38.0)</em>, <em>GenomeInfoDb(v.1.22.0)</em>, <em>IRanges(v.2.20.0)</em>, <em>S4Vectors(v.0.24.0)</em>, <em>BiocGenerics(v.0.32.0)</em>, <em>forcats(v.0.4.0)</em>, <em>stringr(v.1.4.0)</em>, <em>dplyr(v.0.8.3)</em>, <em>purrr(v.0.3.3)</em>, <em>readr(v.1.3.1)</em>, <em>tidyr(v.1.0.0)</em>, <em>tibble(v.2.1.3)</em>, <em>ggplot2(v.3.2.1)</em>, <em>tidyverse(v.1.3.0)</em>, <em>magrittr(v.1.5)</em>, <em>scales(v.1.1.0)</em>, <em>pander(v.0.6.3)</em>, <em>SNPRelate(v.1.20.0)</em>, <em>SeqArray(v.1.26.1)</em> and <em>gdsfmt(v.1.22.0)</em></p>
+<p><strong>loaded via a namespace (and not attached):</strong> <em>Biobase(v.2.46.0)</em>, <em>httr(v.1.4.1)</em>, <em>jsonlite(v.1.6)</em>, <em>modelr(v.0.1.5)</em>, <em>assertthat(v.0.2.1)</em>, <em>highr(v.0.8)</em>, <em>GenomeInfoDbData(v.1.2.2)</em>, <em>cellranger(v.1.1.0)</em>, <em>Rsamtools(v.2.2.1)</em>, <em>yaml(v.2.2.0)</em>, <em>pillar(v.1.4.2)</em>, <em>backports(v.1.1.5)</em>, <em>lattice(v.0.20-38)</em>, <em>glue(v.1.3.1)</em>, <em>digest(v.0.6.22)</em>, <em>XVector(v.0.26.0)</em>, <em>rvest(v.0.3.5)</em>, <em>colorspace(v.1.4-1)</em>, <em>htmltools(v.0.4.0)</em>, <em>Matrix(v.1.2-17)</em>, <em>XML(v.3.98-1.20)</em>, <em>pkgconfig(v.2.0.3)</em>, <em>broom(v.0.5.2)</em>, <em>haven(v.2.2.0)</em>, <em>zlibbioc(v.1.32.0)</em>, <em>BiocParallel(v.1.20.0)</em>, <em>farver(v.2.0.1)</em>, <em>generics(v.0.0.2)</em>, <em>ellipsis(v.0.3.0)</em>, <em>withr(v.2.1.2)</em>, <em>SummarizedExperiment(v.1.16.0)</em>, <em>lazyeval(v.0.2.2)</em>, <em>cli(v.1.1.0)</em>, <em>crayon(v.1.3.4)</em>, <em>readxl(v.1.3.1)</em>, <em>evaluate(v.0.14)</em>, <em>fs(v.1.3.1)</em>, <em>nlme(v.3.1-142)</em>, <em>xml2(v.1.2.2)</em>, <em>tools(v.3.6.1)</em>, <em>hms(v.0.5.2)</em>, <em>lifecycle(v.0.1.0)</em>, <em>matrixStats(v.0.55.0)</em>, <em>munsell(v.0.5.0)</em>, <em>reprex(v.0.3.0)</em>, <em>DelayedArray(v.0.12.0)</em>, <em>Biostrings(v.2.54.0)</em>, <em>compiler(v.3.6.1)</em>, <em>rlang(v.0.4.1)</em>, <em>grid(v.3.6.1)</em>, <em>RCurl(v.1.95-4.12)</em>, <em>rstudioapi(v.0.10)</em>, <em>labeling(v.0.3)</em>, <em>bitops(v.1.0-6)</em>, <em>rmarkdown(v.1.17)</em>, <em>gtable(v.0.3.0)</em>, <em>DBI(v.1.0.0)</em>, <em>R6(v.2.4.1)</em>, <em>GenomicAlignments(v.1.22.1)</em>, <em>lubridate(v.1.7.4)</em>, <em>knitr(v.1.26)</em>, <em>zeallot(v.0.1.0)</em>, <em>stringi(v.1.4.3)</em>, <em>Rcpp(v.1.0.3)</em>, <em>vctrs(v.0.2.0)</em>, <em>dbplyr(v.1.4.2)</em>, <em>tidyselect(v.0.2.5)</em> and <em>xfun(v.0.11)</em></p>
 </div>
 
 
