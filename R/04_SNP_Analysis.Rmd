@@ -162,10 +162,12 @@ snpsGR <- makeGRangesFromDataFrame(
 This was intersected with the set of genes to connect SNPs to genes within `r maxKb` kb.
 
 ```{r snp2Gene}
-snp2Gene <- snpsGR %>% 
-    resize(width = 1000*maxKb/2 - 1) %>%
+snp2Gene <- suppressWarnings(
+  snpsGR %>% 
+    resize(width = 2*1000*maxKb - 1, fix = "center") %>%
     trim() %>%
     join_overlap_inner(ensGenes) 
+)
 ```
 
 A set of SNPs within exonic regions was also defined.
@@ -1056,7 +1058,7 @@ After running Bayescan, results were imported.
 Unfortunately, these results had IDs which were taken from the line in the above VCF and need to be converted back to IDs compatible with previous analysis.
 
 
-```{r}
+```{r bayRes}
 bayRes <- file.path("..", "external", "BayescanOut.txt.gz") %>%
   gzfile() %>%
   read_delim(delim = " ", col_names = FALSE, skip = 1, col_types = "innnnn-") %>%
@@ -1064,7 +1066,7 @@ bayRes <- file.path("..", "external", "BayescanOut.txt.gz") %>%
   mutate(variant.id = var2VCF[ID])
 ```
 
-```{r}
+```{r, echo=FALSE}
 bayRes %>%
   dplyr::select(variant.id, qval, fst) %>%
   dplyr::filter(qval < alpha) %>%
@@ -1155,11 +1157,11 @@ sigSnps <- c(
 ```
 
 
-```{r}
+```{r, echo=FALSE}
 suppressWarnings(
   snpsGR %>%
     subset(snpID %in% sigSnps) %>%
-    resize(width = 1000*maxKb/2) %>%
+    resize(width = 1000*maxKb*2, fix = "center") %>%
     trim() %>%
     find_overlaps(ensGenes) %>%
     as.data.frame() %>%
@@ -1171,13 +1173,11 @@ suppressWarnings(
     ) %>%
     mutate(
       distance = case_when(
-        position < start ~ comma(start - position),
-        position > end ~ comma(position - end),
+        position < start ~ comma(start - position, accuracy = 1),
+        position > end ~ comma(position - end, accuracy = 1),
         snpID %in% ensExons$snpID ~ "Exonic",
         position >= start & position <= end ~ "Intronic"
-      )
-    ) %>%
-    mutate(
+      ),
       model = ifelse(
         snpID %in% filter(alleleResults, FDR < alpha)$snpID, "A", ""
         ),
@@ -1188,7 +1188,8 @@ suppressWarnings(
       model = ifelse(
         snpID %in% filter(genotypeResults, FDR < alpha)$snpID,
         paste0(model, "G"), model
-      )
+      ),
+      width = comma(width, accuracy = 1)
     ) %>%
     unite(location, chromosome, position, sep = ":") %>%
     dplyr::select(
@@ -1205,6 +1206,7 @@ suppressWarnings(
     justify = "llllrll",
     style = "rmarkdown",
     split.tables = Inf,
+    # big.mark = ",",
     caption = paste0(
       "All putatively significant SNPs with genes located within ", maxKb, "kb. ",
       "The distance from SNP to gene is indicated, unless the SNP is intronic/exonic. ",
@@ -1246,11 +1248,7 @@ goSummaries <- url("https://uofabioinformaticshub.github.io/summaries2GO/data/go
 
 ### GO Analysis By Gene
 
-```{r dist}
-dist <- 1000*maxKb
-```
-
-For the initial GO analysis, any gene within `r dist/1000`kb of a SNP considered as significant were tested for any enrichment of biological characteristics.
+For the initial GO analysis, any gene within `r maxKb`kb of a SNP considered as significant were tested for any enrichment of biological characteristics.
 
 ```{r allSnpsGR}
 allSnpsGR <- snps %>%
@@ -1263,7 +1261,7 @@ allSnpsGR <- snps %>%
     seqinfo = seqinfo(ensGenes)) %>%
   join_overlap_inner(
     ensGenes,
-    maxgap = dist
+    maxgap = maxKb*1000
   )
 ```
 
@@ -1282,7 +1280,7 @@ nSigGenes <- sigSnpGR$gene_id %>%
   length()
 ```
 
-`r nGenes` genes were identified as being within `r dist/1000`kb of a SNP.
+`r nGenes` genes were identified as being within `r maxKb`kb of a SNP.
 For the `r length(unique(sigSnpGR$snpID))` candidate SNPs within this distance of a gene, `r nSigGenes` genes were identified, and these were analysed for enrichment of any GO terms.
 
 Mappings from genes to GO terms were downloaded manually from the biomart server at www.ensembl.org.
@@ -1433,7 +1431,7 @@ allSnpsGR %>%
   mutate(Description = str_remove(Description, " \\[Source.+")) %>%
   pander(style = "rmarkdown", split.table = Inf, justify = "lrrlll",
          caption = paste0(
-           "Genes within ", dist / 1000, "kb of SNPs identified in the meta-analysis."))
+           "Genes within ", maxKb, "kb of SNPs identified in the meta-analysis."))
 ```
 
 ```{r, echo=FALSE, fig.cap="Comparison of p-values for SNPs detected in both analyses, with thos considered as significant after meta-analysis shown in red."}
