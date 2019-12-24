@@ -7,7 +7,9 @@ output:
     fig_caption: yes
     fig_height: 6
     fig_width: 10
-    toc: yes
+    toc: true
+    toc_float: true
+    code_folding: hide   
 ---
 
 ```{r setup, include=FALSE}
@@ -40,7 +42,8 @@ Likewise the prepared GDS object is 86.6Mb, which is also too large for storage 
 
 ```{r vcf2gds}
 gdsPath <- file.path("..", "5_stacks", "gds", "populations.snps.gds")
-if (!file.exists(gdsPath)) {
+makeGds <- !file.exists(gdsPath)
+if (makeGds) {
     dir.create(dirname(gdsPath))
     file.path("..", "5_stacks", "vcf", "populations.snps.vcf.gz") %>%
         seqVCF2GDS(gdsPath, reference = "OryCun2.0")
@@ -67,10 +70,12 @@ sampleID <- seqGetData(gdsFile, "sample.id") %>%
     as_tibble()
 ```
 
-```{r add Annotation}
-add.gdsn(gdsFile, "sample.annotation", sampleID, replace = TRUE)
-seqClose(gdsFile)
-gdsFile <- seqOpen(gdsPath, readonly = FALSE)
+```{r addAnnotation}
+if (makeGds) {
+  add.gdsn(gdsFile, "sample.annotation", sampleID, replace = TRUE)
+  seqClose(gdsFile)
+  gdsFile <- seqOpen(gdsPath, readonly = FALSE)
+}
 ```
 
 ### SNP Data Summary
@@ -81,9 +86,6 @@ scaffolds <- seqGetData(gdsFile, "chromosome") %>%
     unique() %>%
     setdiff(chromosomes)
 ```
-
-
-Let's just check the distances, depth and SNP numbers on the main chromosomes
 
 ```{r snpSummary}
 snpSummary <- tibble(
@@ -97,10 +99,11 @@ snpSummary <- tibble(
     as_tibble()
 ```
 
-- Checking the call rate across all samples, 5x1996 samples with SNP call rates < 50% were identified. 
-- This value was not exceeded by any samples in the 2010 or 2012 populations.
+Checking the call rate across all samples, 5x1996 samples with SNP call rates < 50% were identified. 
+This value was not exceeded by any samples in the 2010 or 2012 populations.
+No SNPs were found being unique to Turretfield, which is as expected by the settings given to `stacks`
 
-```{r plotCallRate, fig.cap="Summary of SNP call rate in all samples", fig.height=7}
+```{r plotCallRate, fig.cap="*Summary of SNP call rate in all samples*", fig.height=7}
 snpSummary %>%
     mutate_at(sampleID$Sample, list(is.na)) %>%
     summarise_at(sampleID$Sample, list(sum)) %>%
@@ -118,7 +121,6 @@ snpSummary %>%
     scale_fill_manual(values = c("green", "red"))
 ```
 
-- No SNPs were found being unique to Turretfield, which is as expected by the settings given to `stacks`
 
 ```{r tfSNPs, eval=FALSE}
 tfSNPs <- snpSummary %>%
@@ -151,19 +153,19 @@ snpset <- gdsFile %>%
     .[setdiff(names(.), "chrX")]
 ```
 
-- SNPs were pruned for Linkage Disequilibrium using only samples from the 1996 and 2012 populations and the following criteria:
-     + Minor Allele Frequency > `r percent(minMaf)`
-     + Missing Data in < `r percent(missingRate)` of samples
-     + Correlation of > `r percent(minCor)` indicating LD
-- This has left `r comma(sum(vapply(snpset, length, integer(1))))` SNPs as candidates for downstream analysis
+SNPs were pruned for Linkage Disequilibrium using only samples from the 1996 and 2012 populations and the following criteria:
 
-- LD Pruning leaves a residual filter applied so this needs to be reset.
+- Minor Allele Frequency > `r percent(minMaf)`
+- Missing Data in < `r percent(missingRate)` of samples
+- Correlation of > `r percent(minCor)` indicating LD
+
+This has left `r comma(sum(vapply(snpset, length, integer(1))))` SNPs as candidates for downstream analysis.
 
 ```{r resetFilter, results='hide'}
 seqResetFilter(gdsFile) 
 ```
 
-```{r, keepSNPs}
+```{r keepSNPs}
 keepSNPs <- c("variant.id", "position", "chromosome") %>%
     sapply(function(x){
         seqGetData(gdsFile, x)
@@ -172,7 +174,7 @@ keepSNPs <- c("variant.id", "position", "chromosome") %>%
     dplyr::filter(variant.id %in% unlist(snpset))
 ```
 
-```{r plotKeepSNPs, echo = FALSE, fig.cap = "Summary of SNPs per chromosome after filtering for LD."}
+```{r plotKeepSNPs, echo = FALSE, fig.cap = "*Summary of SNPs per chromosome after filtering for LD.*"}
 keepSNPs %>%
     dplyr::filter(chromosome %in% c(1:22, "X")) %>%
     group_by(chromosome) %>%
@@ -188,9 +190,15 @@ keepSNPs %>%
 ```
 
 
-- This set of SNPs was then exported as an R object for downstream use.
+This set of SNPs was then exported as an R object for downstream use.
 
 ```{r}
 write_rds(keepSNPs, "keepSNPsAfterLDPruning.RDS")
+```
+
+## SessionInfo
+
+```{r, echo=FALSE}
+pander(sessionInfo())
 ```
 
