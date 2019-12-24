@@ -7,7 +7,10 @@ output:
     fig_caption: yes
     fig_height: 8
     fig_width: 10
-    toc: yes
+    toc: true
+    toc_float: true
+    code_folding: hide 
+    toc_depth: 2
 ---
 
 ```{r setup, include=FALSE}
@@ -31,11 +34,8 @@ library(plyranges)
 library(rtracklayer)
 ```
 
-```{r here, echo=FALSE}
+```{r setOptions, echo=FALSE}
 if (interactive()) here::here("R") %>% setwd()
-```
-
-```{r setOptions}
 theme_set(theme_bw())
 panderOptions('big.mark', ",")
 panderOptions('table.style', "rmarkdown")
@@ -62,7 +62,7 @@ sampleID <- tibble(
 
 Autosomal SNP IDs for the 1996 and 2012 samples were loaded.
 
-```{r snps}
+```{r snps, include=FALSE}
 seqSetFilter(gdsFile, sample.id = sampleID$Sample)
 snps <- tibble(
   variant.id = seqGetData(gdsFile, "variant.id") ,
@@ -87,7 +87,7 @@ Here this was set as SNPs identified in >95% of individuals (i.e. > 104).
 For simpler plotting and estimation of decay, only SNPs < 1Mb apart were retained.
 
 
-```{r allLD, results='hide'}
+```{r allLD, results='hide', include=FALSE}
 seqSetFilter(gdsFile, sample.id = sampleID$Sample)
 allLD <- snps %>% 
   filter(
@@ -154,7 +154,7 @@ fitDecay <- allLD %>%
 ```
 
 
-```{r, echo=FALSE, fig.cap = "Linkage decay for distances up to 1Mb. The Hill-Weir decay line is shown in blue as is the distance 40kb. The red dashed line indicates the distances where linkage falls to half of the maximal linkage."}
+```{r, echo=FALSE, fig.cap = "*Linkage decay for distances up to 1Mb. The Hill-Weir decay line is shown in blue as is the distance 40kb. The red dashed line indicates the distances where linkage falls to half of the maximal linkage.*"}
 allLD %>%
   ggplot(aes(bp / 1e3, LD^2)) +
   geom_point(alpha = 0.1) +
@@ -169,7 +169,7 @@ allLD %>%
     colour = "red", 
     linetype = 2
   ) + 
-  geom_text(
+  geom_label(
     x = dplyr::filter(fitDecay$line, y < 0.5*max(y))$x[1]/1e3,
     y = 0.95,
     label = paste(
@@ -379,7 +379,7 @@ In this analysis, linkage between each significant SNP and those within `r d/100
 Under no selective pressure, linkage would be expected to gradually decrease over the passage of time through recombination, as seen below, where correlations (as indicated by the blue regression line) are trending towards zero.
 SNPs in strong physical linkage before selective pressure from RHDV tended to remain in strong linkage if within the same locus (~100bp).
 
-```{r plotCors, fig.cap = "Correlations between pairs of SNPs located within 100kb of the significant SNPs detected in the previous stages. The regression line is shown in blue, with y = x shown in black for reference. SNPs within the same locus are shown in red. Only SNPs identified in >70% of both populations are shown"}
+```{r plotCors, fig.cap = "*Correlations between pairs of SNPs located within 100kb of the significant SNPs detected in the previous stages. The regression line is shown in blue, with y = x shown in black for reference. SNPs within the same locus are shown in red. Only SNPs identified in >70% of both populations are shown.*"}
 labFun <- function(x){1 / x}
 cors %>% 
   mutate(`Same Locus` = Locus1 == Locus2) %>%
@@ -459,10 +459,10 @@ sigCors %>%
   arrange(position, distance) %>%
   pander(
     caption = paste(
-      "SNPs showing a significant shift in linkage to an FDR of 5%.",
+      "*SNPs showing a significant shift in linkage to an FDR of 5%.",
       "The position given corresponds to the SNP considered as potentially",
       "impacted by RHDV selection, whilst the the distance refers to the SNP",
-      "where linkage has been potentially impacted by RHDV selection"
+      "where linkage has been potentially impacted by RHDV selection.*"
     )
   )
 ```
@@ -511,8 +511,7 @@ dplyr::filter(cors, Locus1 == Locus2) %>%
   dplyr::select(chromosome, snp1, snp2, pos1, dist,corr1996, corr2012) %>% 
   pander(
     caption = paste(
-      "Correlations between SNPs within the same loci as", 
-      "candidate SNPs detected earlier."
+      "Correlations between SNPs within the same loci as candidate SNPs detected earlier.*"
     )
   )
 ```
@@ -538,7 +537,7 @@ corList <- cors %>%
   split(f = .$Locus1) 
 ```
 
-```{r}
+```{r, include=FALSE}
 x <- corList$`321186`
 ids <- dplyr::filter(snps, snpID %in% unlist(x[c("snp1", "snp2")]))$variant.id 
 seqSetFilter(gdsFile, sample.id = samples, variant.id = ids)
@@ -574,7 +573,7 @@ cors %>%
 ```
 
 
-# Session Info
+## Session Info
 
 ```{r closeGds, eval=TRUE}
 seqClose(gdsFile)
