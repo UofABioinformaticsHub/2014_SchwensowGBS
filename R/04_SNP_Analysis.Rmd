@@ -10,7 +10,6 @@ output:
     toc: true
     toc_float: true
     code_folding: hide 
-    toc_depth: 2
 ---
 
 
@@ -44,12 +43,8 @@ library(GO.db)
 ```
 
 
-```{r here, echo=FALSE}
+```{r setOptions}
 if (interactive()) here::here("R") %>% setwd()
-```
-
-
-```{r otherParams}
 theme_set(theme_bw())
 panderOptions("missing", "")
 mc <- min(12, detectCores() - 1)
@@ -193,7 +188,7 @@ lowCall <- c("gc2901", "gc2776", "gc2731", "gc2727", "gc2686")
 ```
 
 
-```{r pca}
+```{r pca, cache = TRUE}
 snp4PCA <- genotypes %>% 
     filter(!Sample %in% lowCall) %>%
     group_by(variant.id, Population) %>% 
@@ -236,7 +231,7 @@ sampleID %<>%
 ```
 
 
-```{r plotPCA, echo=FALSE, fig.cap="*PCA showing population structure. Point size reflects the proportion of SNPs for which imputation was required, and the observed structure appeared independent of this.*"}
+```{r plotPCA, cache=TRUE, dependson='pca', fig.cap="*PCA showing population structure. Point size reflects the proportion of SNPs for which imputation was required, and the observed structure appeared independent of this.*"}
 fs <- 14
 ps <- 3
 popCols <- c(rgb(0, 0, 0, 0.7), 
@@ -1122,6 +1117,17 @@ bayRes %>%
     chromosome = seqnames, position = start_snp, 
     gene_id, Name, dist2Gene, fst, qval) %>%
   mutate(position = comma(position)) %>%
+  bind_rows(
+    tibble(
+      snpID = "4165193_106",
+      chromosome = "GL019119",
+      position = "147630",
+      gene_id = "",
+      Name = "",
+      dist2Gene = "",
+      qval = 0.033857
+    )
+  ) %>%
   arrange(qval) %>%
   pander(
     justify = "llrllrrr",
@@ -1131,7 +1137,7 @@ bayRes %>%
       caption = paste(
         "*Results from Bayescan with a q-value <", paste0(alpha, "."),
         "The nearest gene within", paste0(maxKb, "kb"), "is also given.",
-        "One SNP detected by Bayescan was located on a scaffold with no genes (GL019119) & is not shown in this table.*"
+        "One SNP detected by Bayescan was located on a scaffold with no genes (GL019119).*"
       )
   )
 ```

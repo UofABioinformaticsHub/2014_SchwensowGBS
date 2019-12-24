@@ -34,7 +34,7 @@ library(plyranges)
 library(rtracklayer)
 ```
 
-```{r setOptions, echo=FALSE}
+```{r setOptions}
 if (interactive()) here::here("R") %>% setwd()
 theme_set(theme_bw())
 panderOptions('big.mark', ",")
@@ -154,7 +154,7 @@ fitDecay <- allLD %>%
 ```
 
 
-```{r, echo=FALSE, fig.cap = "*Linkage decay for distances up to 1Mb. The Hill-Weir decay line is shown in blue as is the distance 40kb. The red dashed line indicates the distances where linkage falls to half of the maximal linkage.*"}
+```{r plotDecay, cache=TRUE, fig.cap = "*Linkage decay for distances up to 1Mb. The Hill-Weir decay line is shown in green as is the distance 40kb. The red dashed line indicates the distances where linkage falls to half of the maximal linkage.*"}
 allLD %>%
   ggplot(aes(bp / 1e3, LD^2)) +
   geom_point(alpha = 0.1) +
@@ -444,7 +444,7 @@ sigCors <- cors %>%
 Correlations were converted to Z scores using Fisher's transformation and tests for a significant change were conducted.
 P-values were adjusted using the Benjamini-Hochbers False-Discovery Rate, giving `r sum(sigCors$adjP < 0.05)` SNPs with significantly changed correlations.
 
-```{r sigCorTable, echo = FALSE}
+```{r sigCorTable}
 sigCors %>% 
   arrange(p) %>% 
   dplyr::filter(adjP < 0.05) %>%
@@ -506,7 +506,7 @@ Whilst no genes defined in Ensembl 96 were within 100kb of this SNP, a Genscan p
 
 ### SNPs Within the Same Locus
 
-```{r sameLocTable, echo=FALSE}
+```{r sameLocTable}
 dplyr::filter(cors, Locus1 == Locus2) %>% 
   dplyr::select(chromosome, snp1, snp2, pos1, dist,corr1996, corr2012) %>% 
   pander(
