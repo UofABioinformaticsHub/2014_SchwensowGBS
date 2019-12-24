@@ -7,12 +7,17 @@ output:
     fig_caption: yes
     fig_height: 6
     fig_width: 10
-    toc: yes
+    toc: true
+    toc_float: true
+    code_folding: hide    
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
-                      warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE, 
+  message = FALSE
+)
 ```
 
 ## Setup
@@ -40,7 +45,8 @@ Likewise the prepared GDS object is 86.6Mb, which is also too large for storage 
 
 ```{r vcf2gds}
 gdsPath <- file.path("..", "5_stacks", "gds", "populations.snps.gds")
-if (!file.exists(gdsPath)) {
+makeGds <- !file.exists(gdsPath)
+if (makeGds) {
     dir.create(dirname(gdsPath))
     file.path("..", "5_stacks", "vcf", "populations.snps.vcf.gz") %>%
         seqVCF2GDS(gdsPath, reference = "OryCun2.0")
@@ -67,10 +73,12 @@ sampleID <- seqGetData(gdsFile, "sample.id") %>%
     as_tibble()
 ```
 
-```{r add Annotation}
-add.gdsn(gdsFile, "sample.annotation", sampleID, replace = TRUE)
-seqClose(gdsFile)
-gdsFile <- seqOpen(gdsPath, readonly = FALSE)
+```{r addAnnotation}
+if (makeGds) {
+  add.gdsn(gdsFile, "sample.annotation", sampleID, replace = TRUE)
+  seqClose(gdsFile)
+  gdsFile <- seqOpen(gdsPath, readonly = FALSE)
+}
 ```
 
 ### SNP Data Summary
@@ -91,16 +99,18 @@ snpSummary <- tibble(
     chromosome = seqGetData(gdsFile, "chromosome"),
     position = seqGetData(gdsFile, "position")
 ) %>%
-    cbind(seqGetData(gdsFile, "annotation/format/DP")$data %>% 
-              t %>%
-              set_colnames(sampleID$Sample)) %>%
+    cbind(
+      seqGetData(gdsFile, "annotation/format/DP")$data %>% 
+        t %>%
+        set_colnames(sampleID$Sample)
+    ) %>%
     as_tibble()
 ```
 
-- Checking the call rate across all samples, 5x1996 samples with SNP call rates < 50% were identified. 
-- This value was not exceeded by any samples in the 2010 or 2012 populations.
+Checking the call rate across all samples, 5x1996 samples with SNP call rates < 50% were identified. 
+This value was not exceeded by any samples in the 2010 or 2012 populations.
 
-```{r plotCallRate, fig.cap="Summary of SNP call rate in all samples", fig.height=7}
+```{r plotCallRate, fig.cap="*Summary of SNP call rate in all samples*", fig.height=12}
 snpSummary %>%
     mutate_at(sampleID$Sample, list(is.na)) %>%
     summarise_at(sampleID$Sample, list(sum)) %>%
@@ -118,7 +128,37 @@ snpSummary %>%
     scale_fill_manual(values = c("green", "red"))
 ```
 
-- No SNPs were found being unique to Turretfield, which is as expected by the settings given to `stacks`
+```{r plotDepth, fig.cap="*Summary of sequencing depth across all SNPs for each sample*", fig.height=14}
+minDepth <- 5
+maxDepth <- 100
+snpSummary %>%
+  gather(key = "Sample", value = "Depth", -variant.id, -chromosome, -position) %>%
+  dplyr::filter(!is.na(Depth)) %>%
+  left_join(sampleID) %>%
+  ggplot(aes(x = Sample, y = Depth)) +
+  geom_boxplot() +
+  geom_hline(yintercept = c(minDepth, maxDepth), linetype = 2, colour = "blue") +
+  scale_y_log10() +
+  coord_flip() +
+  facet_grid(Population ~ ., scales = "free_y", space = "free_y")
+```
+
+```{r maxDepth}
+snpOKDepth <- snpSummary %>%
+  gather(key = "Sample", value = "Depth", -variant.id, -chromosome, -position) %>%
+  dplyr::filter(!is.na(Depth)) %>% 
+  group_by(variant.id) %>% 
+  summarise(Depth = median(Depth)) %>% 
+  dplyr::filter(Depth < maxDepth & Depth > minDepth) %>%
+  .[["variant.id"]]
+```
+
+
+SNPs with a median sequencing depth > `r maxDepth` were marked for removal as these were considered likely to indicate duplications as opposed to unique SNPs.
+Similarly, SNPs with a median sequencing depth < `r minDepth` were marked for removal as being of low confidence,
+This removed a total of `r comma(nrow(snpSummary) - length(snpOKDepth))` SNPs, leaving `r comma(length(snpOKDepth))` SNPs available for linkage pruning.
+
+No SNPs were found being unique to Turretfield, which is as expected by the settings given to `stacks`
 
 ```{r tfSNPs, eval=FALSE}
 tfSNPs <- snpSummary %>%
@@ -142,6 +182,7 @@ minCor <- 0.4
 snpset <- gdsFile %>%
     snpgdsLDpruning(
         sample.id = grep("(gc|ora)", seqGetData(., "sample.id"), value = TRUE),
+        snp.id = snpOKDepth,
         autosome.only = FALSE,
         maf = minMaf,
         missing.rate = missingRate,
@@ -151,13 +192,13 @@ snpset <- gdsFile %>%
     .[setdiff(names(.), "chrX")]
 ```
 
-- SNPs were pruned for Linkage Disequilibrium using only samples from the 1996 and 2012 populations and the following criteria:
-     + Minor Allele Frequency > `r percent(minMaf)`
-     + Missing Data in < `r percent(missingRate)` of samples
-     + Correlation of > `r percent(minCor)` indicating LD
-- This has left `r comma(sum(vapply(snpset, length, integer(1))))` SNPs as candidates for downstream analysis
+SNPs were pruned for Linkage Disequilibrium using only samples from the 1996 and 2012 populations and the following criteria:
 
-- LD Pruning leaves a residual filter applied so this needs to be reset.
+- Minor Allele Frequency > `r percent(minMaf)`
+- Missing Data in < `r percent(missingRate)` of samples
+- Correlation of > `r percent(minCor)` indicating LD
+
+This has given `r comma(sum(vapply(snpset, length, integer(1))))` SNPs as candidates for downstream analysis
 
 ```{r resetFilter, results='hide'}
 seqResetFilter(gdsFile) 
@@ -172,7 +213,7 @@ keepSNPs <- c("variant.id", "position", "chromosome") %>%
     dplyr::filter(variant.id %in% unlist(snpset))
 ```
 
-```{r plotKeepSNPs, echo = FALSE, fig.cap = "Summary of SNPs per chromosome after filtering for LD."}
+```{r plotKeepSNPs, echo = FALSE, fig.cap = "*Summary of SNPs per chromosome after filtering for LD.*"}
 keepSNPs %>%
     dplyr::filter(chromosome %in% c(1:22, "X")) %>%
     group_by(chromosome) %>%
@@ -188,9 +229,15 @@ keepSNPs %>%
 ```
 
 
-- This set of SNPs was then exported as an R object for downstream use.
+This set of SNPs was then exported as an R object for downstream use.
 
 ```{r}
 write_rds(keepSNPs, "keepSNPsAfterLDPruning.RDS")
+```
+
+## SessionInfo
+
+```{r}
+pander(sessionInfo())
 ```
 
