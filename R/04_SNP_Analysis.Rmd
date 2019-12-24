@@ -7,14 +7,18 @@ output:
     fig_caption: yes
     fig_height: 8
     fig_width: 10
-    toc: yes
+    toc: true
+    toc_float: true
+    code_folding: hide    
     toc_depth: 2
 ---
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
-                      warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE, message = FALSE
+)
 ```
 
 ## Setup
