@@ -7,17 +7,20 @@ output:
     fig_caption: yes
     fig_height: 8
     fig_width: 10
-    toc: yes
+    toc: true
+    toc_float: true
+    code_folding: hide 
     toc_depth: 2
 ---
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
-                      warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE, message = FALSE
+)
 ```
 
-## Setup
 
 ```{r loadPackages}
 library(SeqArray)
@@ -85,7 +88,7 @@ popSizes <- sampleID %>%
 ```
 
 
-```{r genotypes}
+```{r genotypes, include=FALSE}
 snps <- tibble(
     variant.id = seqGetData(gdsFile, "variant.id") ,
     chromosome = seqGetData(gdsFile, "chromosome"),
@@ -277,7 +280,7 @@ pca4Plot %>%
   scale_colour_manual(values = popCols)
 ```
 
-```{r mapParams}}
+```{r mapParams}
 loc <- c(
   range(sampleID$Longitude, na.rm = TRUE) %>% mean,
   range(sampleID$Latitude, na.rm = TRUE) %>% mean
@@ -381,7 +384,7 @@ ausPlot <- ggplot() +
   theme(plot.background = element_rect(fill = "white", colour = "black"))
 ```
 
-```{r map2Pdf, echo=FALSE, cache=TRUE, dependson=c('mainPlot', 'Map4Inset')}
+```{r map2Pdf, cache=TRUE, dependson=c('mainPlot', 'Map4Inset'), include=FALSE}
 pdf(file.path("..", "figures", "Figure1.pdf"), width = w, height = h) 
 grid.newpage()
 vp1 <- viewport(0.5,0.5, 1, 1)
@@ -391,7 +394,7 @@ print(ausPlot, vp = vp2)
 dev.off()
 ```
 
-```{bash, echo = FALSE}
+```{bash}
 convert \
   -density 600 \
   -size 1920 \
@@ -400,7 +403,7 @@ convert \
 ```
 
 
-```{r plotWithInset_png, echo = FALSE, fig.cap="*Figure 1: Collection points for all 2012 samples with colours showing sub-populations initially defined by PCA analysis and *k*-means clustering.*", out.width='80%'}
+```{r plotWithInset_png, fig.cap="*Figure 1: Collection points for all 2012 samples with colours showing sub-populations initially defined by PCA analysis and *k*-means clustering.*", out.width='80%'}
 knitr::include_graphics(file.path("..", "figures", "Figure1.png"))
 ```
 
@@ -586,7 +589,7 @@ pcaPost4Plot <- pcaPost$x %>%
 ```
 
 
-```{r comparePCA, echo=FALSE, results='hide'}
+```{r comparePCA, results='hide', include=FALSE}
 pdf(file.path("..", "figures", "Figure2.pdf"), height = h, width = w*1.8)
 bind_rows(
   pca4Plot %>%
@@ -611,7 +614,7 @@ bind_rows(
 dev.off()
 ```
 
-```{bash, echo = FALSE}
+```{bash}
 convert \
 -density 600 \
 -size 1920 \
@@ -620,7 +623,7 @@ convert \
 ```
 
 
-```{r Figure2_png, echo = FALSE, fig.cap="*Figure 2: Principal Components Analysis showing structures before removal of SNPs denoting collection region in the 2012 population, and after removal of these SNPs*", out.width='80%'}
+```{r Figure2_png, fig.cap="*Figure 2: Principal Components Analysis showing structures before removal of SNPs denoting collection region in the 2012 population, and after removal of these SNPs*", out.width='80%'}
 knitr::include_graphics(file.path("..", "figures", "Figure2.png"))
 ```
 
@@ -675,7 +678,7 @@ genoSNPs <- genotypeResults %>%
 ```
 
 
-```{r echo = FALSE}
+```{r}
 snpsGR %>% 
   subset(snpID %in% genoSNPs) %>% 
   join_nearest(ensGenes) %>%
@@ -735,9 +738,9 @@ snpsGR %>%
     big.mark = ",",
     split.tables = Inf,
     caption = paste(
-      "Candidate SNPs to an FDR of", percent_format(1)(alpha), "when analysing by genotype.",
+      "*Candidate SNPs to an FDR of", percent_format(1)(alpha), "when analysing by genotype.",
       "The nearest gene to each SNP (within", paste0(maxKb, "kb"), ") is indicated.",
-      "Bonferroni-adjusted p-values are also given in the final column.")
+      "Bonferroni-adjusted p-values are also given in the final column.*")
   )
 ```
 
@@ -749,7 +752,7 @@ Under the full genotype model:
 - For the most highly ranked SNP (`r genotypeResults$snpID[[1]]`), the minor allele has been completely lost in the 2012 population
 
 
-```{r manhattanGenotype, echo = FALSE, results='hide'}
+```{r manhattanGenotype, results='hide', include=FALSE}
 pdf(file.path("..", "figures", "FigureS3a.pdf"), height = 0.6*h, width = w)
 hLine <- max(filter(genotypeResults, FDR < alpha)$p)
 hLight <- filter(genotypeResults, adjP < alpha, chromosome %in% 1:21)$variant.id
@@ -763,7 +766,7 @@ genotypeResults %>%
 dev.off()
 ```
 
-```{bash, echo = FALSE}
+```{bash}
 convert \
 -density 600 \
 -size 1920 \
@@ -772,11 +775,11 @@ convert \
 ```
 
 
-```{r manhattanGenotype_png, echo = FALSE, fig.cap = "Figure 3a: Manhattan plot showing results for all SNPs on chromosomes 1:21 for analysis by genotype. The horizontal line indicates the cutoff for an FDR of 5%, with SNPs with an adjusted p-value < 0,05 shown in green", out.width='80%'}
+```{r manhattanGenotype_png, fig.cap = "*Figure 3a: Manhattan plot showing results for all SNPs on chromosomes 1:21 for analysis by genotype. The horizontal line indicates the cutoff for an FDR of 5%, with SNPs with an adjusted p-value < 0,05 shown in green*", out.width='80%'}
 knitr::include_graphics(file.path("..", "figures", "FigureS3a.png"))
 ```
 
-```{r plotSigGenotypes, echo = FALSE, fig.cap="*Variants detected as significant to an FDR of 5%. Those denoted with an asterisk received a Bonferroni-adjusted p-value < 0.05 and these typically involved reduction of the minor allele frequency and a shift towards homozygous reference. The remaining sites showed a combination of the same and increasing minor allele abundance, with some variants becoming exclusively heterozygous in the 2012 population.*"}
+```{r plotSigGenotypes, fig.cap="*Variants detected as significant to an FDR of 5%. Those denoted with an asterisk received a Bonferroni-adjusted p-value < 0.05 and these typically involved reduction of the minor allele frequency and a shift towards homozygous reference. The remaining sites showed a combination of the same and increasing minor allele abundance, with some variants becoming exclusively heterozygous in the 2012 population.*"}
 genotypeResults %>% 
   filter(FDR < alpha) %>% 
   left_join(
@@ -878,7 +881,7 @@ alleleSnps <- alleleResults %>%
 ```
 
 
-```{r echo = FALSE}
+```{r}
 snpsGR %>% 
   subset(snpID %in% alleleSnps) %>% 
   join_nearest(ensGenes) %>%
@@ -930,11 +933,11 @@ snpsGR %>%
      big.mark = ",",
     split.tables = Inf,
       caption = paste(
-        "SNPs considered as significant when analysing by genotype using an FDR cutoff of", 
+        "*SNPs considered as significant when analysing by genotype using an FDR cutoff of", 
         percent_format(1)(alpha),
         "Minor allele frequencies are reported based on frequencies in the 1996 population.",
         "Any genes within", paste0(maxKb, "kb"), "are also shown.",
-        "Bonferroni-adjusted p-values are given in the final column."
+        "Bonferroni-adjusted p-values are given in the final column.*"
       )
   )
 ```
@@ -946,7 +949,7 @@ Under this model:
 - `r nrow(filter(alleleResults, FDR < alpha))` SNP alleles were detected as being significantly associated with the two populations when controlling the FDR at &#945; = `r alpha`
 
 
-```{r manhattanAllele, echo = FALSE, fig.height=5, fig.width=8, }
+```{r manhattanAllele, fig.height=5, fig.width=8, include = FALSE}
 pdf(file.path("..", "figures", "FigureS3b.pdf"), height = 0.6*h, width = w)
 hLine <- max(filter(alleleResults, FDR < alpha)$p)
 hLight <- as.character(filter(alleleResults, adjP < 0.05, chromosome %in% 1:21)$snpID)
@@ -962,7 +965,7 @@ alleleResults %>%
 dev.off()
 ```
 
-```{bash, echo = FALSE}
+```{bash}
 convert \
 -density 600 \
 -size 1920 \
@@ -971,12 +974,12 @@ convert \
 ```
 
 
-```{r manhattanAllele_png, echo = FALSE, fig.cap = "Manhattan plot showing results for all SNPs on chromosomes 1:21 when analysing by allele frequencies. The horizontal line indicates the cutoff for an FDR of 5%, with SNPs considered significant under the Bonferroni adjustment shown in green.", out.width='80%'}
+```{r manhattanAllele_png, fig.cap = "Manhattan plot showing results for all SNPs on chromosomes 1:21 when analysing by allele frequencies. The horizontal line indicates the cutoff for an FDR of 5%, with SNPs considered significant under the Bonferroni adjustment shown in green.", out.width='80%'}
 knitr::include_graphics(file.path("..", "figures", "FigureS3b.png"))
 ```
 
 
-```{r plotMAF, echo=FALSE, fig.cap = "*Comparison of minor allele frequencies in both populations. SNPs with an FDR-adjusted p-value < 0.05 are coloured red, whilst those with a Bonferroni-adjusted p-value are additionally labelled.*"}
+```{r plotMAF, fig.cap = "*Comparison of minor allele frequencies in both populations. SNPs with an FDR-adjusted p-value < 0.05 are coloured red, whilst those with a Bonferroni-adjusted p-value are additionally labelled.*"}
 alleleResults %>%
     mutate(Sig = FDR < alpha) %>%
     ggplot(aes(MAF_1996, MAF_2012, colour = Sig, label = snpID)) +
@@ -988,7 +991,7 @@ alleleResults %>%
     theme(legend.position = "none")
 ```
 
-```{r plotSigAlleles, echo = FALSE, fig.cap="*Variants detected as significant to an FDR of 5% under the Allele Frequency model. Those denoted with an asterisk received a Bonferroni-adjusted p-value < 0.05 and these typically involved reduction of the minor allele frequency and a shift towards homozygous reference. The remaining sites showed a combination of the same and increasing minor allele abundance.*"}
+```{r plotSigAlleles, fig.cap="*Variants detected as significant to an FDR of 5% under the Allele Frequency model. Those denoted with an asterisk received a Bonferroni-adjusted p-value < 0.05 and these typically involved reduction of the minor allele frequency and a shift towards homozygous reference. The remaining sites showed a combination of the same and increasing minor allele abundance.*"}
 alleleResults %>% 
   filter(FDR < alpha) %>% 
   gather(Population, B, contains("MAF")) %>%
@@ -1066,7 +1069,7 @@ bayRes <- file.path("..", "external", "BayescanOut.txt.gz") %>%
   mutate(variant.id = var2VCF[ID])
 ```
 
-```{r, echo=FALSE}
+```{r}
 bayRes %>%
   dplyr::select(variant.id, qval, fst) %>%
   dplyr::filter(qval < alpha) %>%
@@ -1126,15 +1129,15 @@ bayRes %>%
      big.mark = ",",
     split.tables = Inf,
       caption = paste(
-        "Results from Bayescan with a q-value <", paste0(alpha, "."),
+        "*Results from Bayescan with a q-value <", paste0(alpha, "."),
         "The nearest gene within", paste0(maxKb, "kb"), "is also given.",
-        "One SNP detected by Bayescan was located on a scaffold with no genes (GL019119) & is not shown in this table."
+        "One SNP detected by Bayescan was located on a scaffold with no genes (GL019119) & is not shown in this table.*"
       )
   )
 ```
 
 
-```{r plotVenn, echo=FALSE, fig.cap = "*Summary of results from all three methods, using an FDR of 0.05 for each approach. All SNPs detected under Bayescan were identified using Fisher's Exact Test for both allele and genotype analysis*"}
+```{r plotVenn, fig.cap = "*Summary of results from all three methods, using an FDR of 0.05 for each approach. All SNPs detected under Bayescan were identified using Fisher's Exact Test for both allele and genotype analysis*"}
 grid.newpage()
 list(
   Genotype = dplyr::filter(genotypeResults, FDR < alpha)$variant.id,
@@ -1157,7 +1160,7 @@ sigSnps <- c(
 ```
 
 
-```{r, echo=FALSE}
+```{r}
 suppressWarnings(
   snpsGR %>%
     subset(snpID %in% sigSnps) %>%
@@ -1208,10 +1211,10 @@ suppressWarnings(
     split.tables = Inf,
     # big.mark = ",",
     caption = paste0(
-      "All putatively significant SNPs with genes located within ", maxKb, "kb. ",
+      "*All putatively significant SNPs with genes located within ", maxKb, "kb. ",
       "The distance from SNP to gene is indicated, unless the SNP is intronic/exonic. ",
       "The model(s) which identified the SNP are indicated in the final column ",
-      "as (A) the Allele Model; (B) Bayescan and (G) the Genotype Model."
+      "as (A) the Allele Model; (B) Bayescan and (G) the Genotype Model.*"
     )
   )
 ```
@@ -1351,12 +1354,16 @@ goRes %>%
          p = round(p, 4),
          FDR = round(FDR, 3)) %>%
   distinct(Ontology, Genes, .keep_all = TRUE) %>%
-  pander(split.tables = Inf, style = "rmarkdown", 
-         justify = "lllrrrrrl",
-         caption = paste("Most highly ranked GO terms.", 
-                         "Where multiple terms resulted from the identical combination of genes, only the most highly ranked terms is shown.",
-                         "Overall, this corresponds to an FDR of", 
-                         percent(max(.$FDR))))
+  pander(
+    split.tables = Inf, style = "rmarkdown", 
+    justify = "lllrrrrrl",
+    caption = paste(
+      "*Most highly ranked GO terms.", 
+      "Where multiple terms resulted from the identical combination of genes, only the most highly ranked terms is shown.",
+      "Overall, this corresponds to an FDR of", 
+      percent(max(.$FDR)), ".*"
+    )
+  )
 ```
 
 ## Meta Analysis With Previous Paper
@@ -1405,7 +1412,7 @@ combinedResults <- tfGR %>%
 
 Using Bonferroni's adjustment to control the FWER at 0.05 gave `r nrow(filter(combinedResults, adjP < 0.05))` candidate SNPs, whilst using the more relaxed criterion of an FDR < 0.05 gave `r nrow(filter(combinedResults, FDR < 0.05))` candidate SNPs.
 
-```{r, echo=FALSE}
+```{r}
 combinedResults %>%
   dplyr::filter(FDR < 0.05) %>%
   dplyr::select(snpID,
@@ -1413,11 +1420,11 @@ combinedResults %>%
                 Position = position,
                 p, adjP, FDR) %>%
   pander(justify = "lrrrrr",
-         caption = "Significant SNPs from the meta-analysis using the previous published results from a separate population.")
+         caption = "*Significant SNPs from the meta-analysis using the previous published results from a separate population.*")
 ```
 
 
-```{r, echo=FALSE}
+```{r}
 allSnpsGR %>% 
   subset(snpID %in% dplyr::filter(combinedResults, FDR < 0.05)$snpID) %>%
   subset(!is.na(Name)) %>% 
@@ -1431,10 +1438,10 @@ allSnpsGR %>%
   mutate(Description = str_remove(Description, " \\[Source.+")) %>%
   pander(style = "rmarkdown", split.table = Inf, justify = "lrrlll",
          caption = paste0(
-           "Genes within ", maxKb, "kb of SNPs identified in the meta-analysis."))
+           "*Genes within ", maxKb, "kb of SNPs identified in the meta-analysis.*"))
 ```
 
-```{r, echo=FALSE, fig.cap="Comparison of p-values for SNPs detected in both analyses, with thos considered as significant after meta-analysis shown in red."}
+```{r, fig.cap="*Comparison of p-values for SNPs detected in both analyses, with thos considered as significant after meta-analysis shown in red.*"}
 combinedResults %>%
   mutate(Sig = FDR < 0.05) %>%
   ggplot(aes(-log10(geno.p), -log10(tf.p), colour = Sig)) +
@@ -1449,7 +1456,7 @@ combinedResults %>%
 ```
 
 
-```{r, echo=FALSE, fig.cap = "Allele distributions in the 1996 and 2012 populations for SNPs identified under the meta-analysis."}
+```{r, fig.cap = "*Allele distributions in the 1996 and 2012 populations for SNPs identified under the meta-analysis.*"}
 combinedResults %>%
   dplyr::filter(FDR < 0.05) %>%
   dplyr::select(snpID) %>%
@@ -1517,7 +1524,7 @@ combinedGoRes <- bm %>%
 
 Inspection of the results revealed an enrichment for terms related to haemoglobin, however, as these genes are co-located this was revealed to be due to a single SNP with multiple haemoglobin genes within 40kb and can be disregarded. 
 
-```{r, echo=FALSE}
+```{r}
 combinedGoRes %>%
   dplyr::filter(
     nSig > Expected,
@@ -1545,12 +1552,16 @@ combinedGoRes %>%
          p = round(p, 4),
          FDR = round(FDR, 3)) %>%
   distinct(Ontology, Genes, .keep_all = TRUE) %>%
-  pander(split.tables = Inf, style = "rmarkdown", 
-         justify = "lllrrrrrrl",
-         caption = paste("Most highly ranked GO terms for combined results.", 
-                         "Where multiple terms resulted from the identical combination of genes, only the most highly ranked terms is shown.",
-                         "Overall, this corresponds to an FDR of", 
-                         percent(max(.$FDR))))
+  pander(
+    split.tables = Inf, style = "rmarkdown", 
+    justify = "lllrrrrrrl",
+    caption = paste(
+      "Most highly ranked GO terms for combined results.", 
+      "Where multiple terms resulted from the identical combination of genes, only the most highly ranked terms is shown.",
+      "Overall, this corresponds to an FDR of", 
+      percent(max(.$FDR)), ".*"
+    )
+  )
 ```
 
 
@@ -1560,7 +1571,7 @@ combinedGoRes %>%
 pander(sessionInfo()) 
 ```
 
-```{r deleteVennLogs, echo=FALSE}
+```{r deleteVennLogs, echo=FALSE, results='hide'}
 list.files(pattern = "log$") %>% file.remove()
 ```
 
