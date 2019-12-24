@@ -86,7 +86,7 @@ Here this was set as SNPs identified in >95% of individuals (i.e. > 104).
 For simpler plotting and estimation of decay, only SNPs < 1Mb apart were retained.
 
 
-```{r allLD, results='hide', include=FALSE}
+```{r allLD, results='hide', include=FALSE, cache=TRUE}
 seqSetFilter(gdsFile, sample.id = sampleID$Sample)
 allLD <- snps %>% 
   filter(
@@ -123,6 +123,7 @@ allLD <- snps %>%
   }) %>%
   bind_rows()
 seqResetFilter(gdsFile)
+n2plot <- 1e5
 ```
 
 A function was then defined to fit Hill & Weir's linkage decay equation using a non-linear fit.
@@ -153,8 +154,10 @@ fitDecay <- allLD %>%
 ```
 
 
-```{r plotDecay, cache=TRUE, fig.cap = "*Linkage decay for distances up to 1Mb. The Hill-Weir decay line is shown in green as is the distance 40kb. The red dashed line indicates the distances where linkage falls to half of the maximal linkage.*"}
+```{r plotDecay, cache=TRUE, dependson='allLD', fig.cap = paste("*Linkage decay for distances up to 1Mb. The Hill-Weir decay line is shown in green as is the distance 40kb. The red dashed line indicates the distances where linkage falls to half of the maximal linkage.", comma(n2plot), "randomly chosen pairs from the complete set of", comma(nrow(allLD)), "pairwise comparisons are shown.*")}
+set.seed(1764)
 allLD %>%
+  sample_n(n2plot) %>%
   ggplot(aes(bp / 1e3, LD^2)) +
   geom_point(alpha = 0.1) +
   geom_line(
