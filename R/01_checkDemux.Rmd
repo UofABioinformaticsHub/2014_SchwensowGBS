@@ -1,6 +1,7 @@
 ---
 title: "Inspect Demultiplexing"
 author: "Steve Pederson"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: 
   html_document: 
     fig_caption: yes
