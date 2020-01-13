@@ -137,9 +137,11 @@ seqClose(gdsFile)
 In addition to the above, the set of genes corresponding the Ensembl Release 96 were loaded.
 
 ```{r ensGenes}
-ensGenes <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz") %>%
-    import.gff3(feature.type = "gene", sequenceRegionsAsSeqinfo = TRUE) %>%
-    .[,c("gene_id", "Name", "description")]
+ensGenes <- file.path(
+  "..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz"
+) %>%
+  import.gff3(feature.type = "gene", sequenceRegionsAsSeqinfo = TRUE) %>%
+  .[,c("gene_id", "Name", "description")]
 ```
 
 
@@ -171,8 +173,10 @@ snp2Gene <- suppressWarnings(
 A set of SNPs within exonic regions was also defined.
 
 ```{r ensExons}
-ensExons <- file.path("..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz") %>%
-    import.gff3(feature.type = "exon", sequenceRegionsAsSeqinfo = TRUE) %>%
+ensExons <- file.path(
+  "..", "external", "Oryctolagus_cuniculus.OryCun2.0.96.gff3.gz"
+) %>%
+  import.gff3(feature.type = "exon", sequenceRegionsAsSeqinfo = TRUE) %>%
   join_overlap_inner_within(
     ensGenes, maxgap = 0, minoverlap = 0, suffix = c(".exon", "")
   ) %>%
@@ -492,7 +496,7 @@ This model tests:
 H<sub>0</sub>: No association between genotypes and collection region  
 H<sub>A</sub>: An association exists between genotypes and collection region
 
-```{r}
+```{r regionResults}
 regionResults <- genotypes %>%
     filter(Population == 2012) %>%
     split(f = .$variant.id) %>%
@@ -793,7 +797,7 @@ genotypeResults %>%
       adjP >= alpha ~ as.character(snpID)
     ),
     snpID = factor(snpID, levels = unique(snpID))
-  ) %>% 
+  ) %>%
   ggplot(aes(Genotype, fill = Population)) + 
   geom_bar(position = position_dodge2(preserve = "single")) + 
   facet_wrap(~snpID, drop = FALSE, ncol = 7) + 
@@ -1210,7 +1214,7 @@ suppressWarnings(
       `Distance` = distance, 
       Models = model
     )
-) %>%
+) %>% 
   pander(
     justify = "llllrll",
     style = "rmarkdown",
@@ -1224,8 +1228,6 @@ suppressWarnings(
     )
   )
 ```
-
-
 
 
 
