@@ -13,8 +13,10 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE,
-                      warning = FALSE, message = FALSE)
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE, message = FALSE
+)
 ```
 
 ## Setup
@@ -121,19 +123,6 @@ snpSummary %>%
     scale_fill_manual(values = c("green", "red"))
 ```
 
-
-```{r tfSNPs, eval=FALSE}
-tfSNPs <- snpSummary %>%
-    gather(key = "Sample", value = "DP", -variant.id, -chromosome, -position) %>%
-    mutate(DP = !is.na(DP)) %>%
-    left_join(sampleID) %>%
-    group_by(variant.id, chromosome, position, Population) %>%
-    summarise(n = sum(DP)) %>%
-    spread(key = "Population", value = n) %>%
-    filter(`1996` == 0 & `2012` == 0)
-```
-
-
 ### LD Pruning
 
 ```{r ldPruning, results='hide'}
@@ -151,6 +140,7 @@ snpset <- gdsFile %>%
         ld.threshold = minCor
         ) %>%
     .[setdiff(names(.), "chrX")]
+seqResetFilter(gdsFile) 
 ```
 
 SNPs were pruned for Linkage Disequilibrium using only samples from the 1996 and 2012 populations and the following criteria:
@@ -161,9 +151,6 @@ SNPs were pruned for Linkage Disequilibrium using only samples from the 1996 and
 
 This has left `r comma(sum(vapply(snpset, length, integer(1))))` SNPs as candidates for downstream analysis.
 
-```{r resetFilter, results='hide'}
-seqResetFilter(gdsFile) 
-```
 
 ```{r keepSNPs}
 keepSNPs <- c("variant.id", "position", "chromosome") %>%
@@ -174,7 +161,7 @@ keepSNPs <- c("variant.id", "position", "chromosome") %>%
     dplyr::filter(variant.id %in% unlist(snpset))
 ```
 
-```{r plotKeepSNPs, echo = FALSE, fig.cap = "*Summary of SNPs per chromosome after filtering for LD.*"}
+```{r plotKeepSNPs, fig.cap = "*Summary of SNPs per chromosome after filtering for LD.*"}
 keepSNPs %>%
     dplyr::filter(chromosome %in% c(1:22, "X")) %>%
     group_by(chromosome) %>%
