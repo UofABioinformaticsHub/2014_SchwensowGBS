@@ -4,7 +4,7 @@ This is best viewed using the [github pages site](https://uofabioinformaticshub.
 
 ## Description
 
-This is the repository for all code used in the analysis of the GBS dataset used in the comparison between rabbits from the 1996 (n = 55) and 2012 (n = 53) populations from the Gum Creek / Oraparrina region of South Australia.
+This is the repository for all code used in the analysis of the GBS dataset used in the comparison between rabbits from the 1996 (n = 59) and 2012 (n = 53) populations from the Gum Creek / Oraparrina region of South Australia.
 
 In addition, some samples from [a previous analysis of the Turretfield rabbit population](https://onlinelibrary.wiley.com/doi/abs/10.1111/mec.14228), sampled in 2010 were included as an outgroup.
 
@@ -14,7 +14,7 @@ All bash scripts are available in the folder [scripts](scripts) with four main p
 
 ## Analytic scripts
 
-The bulk of the data analysis was performed in R with code available inthe following locations:
+The bulk of the data analysis was performed in R with code available in the following locations:
 
 1. [Checking the results of Demultiplexing](R/01_checkDemux)
 2. [Checking the quality of alignments](R/02_checkAlignments)
