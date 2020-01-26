@@ -1582,7 +1582,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">SNP Filtering</h1>
 <h4 class="author">Steve Pederson</h4>
-<h4 class="date">26 January, 2020</h4>
+<h4 class="date">27 January, 2020</h4>
 
 </div>
 
@@ -1595,7 +1595,8 @@ library(pander)
 library(scales)
 library(magrittr)
 library(tidyverse)
-theme_set(theme_bw())</code></pre>
+theme_set(theme_bw())
+if (interactive()) here::here(&quot;R&quot;) %&gt;% setwd</code></pre>
 <p>This workflow goes through multiple steps involved in processing the stacks output:</p>
 <ol style="list-style-type: decimal">
 <li>Beginning with the VCF, this will be converted to a GDS object for easier interaction. As this is a slow conversion process, this will only be performed once. The resulting object will be used to prune SNPs in Linkage Disequilibrium. Notably, this VCF is not available in this github repo as it is ~92Mb and too large. Likewise the prepared GDS object is 86.6Mb, which is also too large for storage on github.</li>
@@ -1645,7 +1646,24 @@ scaffolds &lt;- seqGetData(gdsFile, &quot;chromosome&quot;) %&gt;%
     cbind(seqGetData(gdsFile, &quot;annotation/format/DP&quot;)$data %&gt;% 
               t %&gt;%
               set_colnames(sampleID$Sample)) %&gt;%
-    as_tibble()</code></pre>
+    as_tibble()
+mnDist &lt;- snpSummary %&gt;% 
+  dplyr::filter(chromosome %in% 1:21) %&gt;% 
+  split(f = .$chromosome) %&gt;% 
+  lapply(function(x){diff(x$position)}) %&gt;% 
+  unlist() %&gt;% 
+  mean() %&gt;% 
+  divide_by(1000) %&gt;% 
+  round(2)
+mnDiffLoc &lt;- snpSummary %&gt;% 
+  dplyr::filter(chromosome %in% 1:21) %&gt;% 
+  split(f = .$chromosome) %&gt;%
+  lapply(function(x){diff(x$position) %&gt;% .[. &gt; 100]}) %&gt;%
+  unlist() %&gt;% 
+  mean() %&gt;% 
+  divide_by(1000) %&gt;% 
+  round(2)</code></pre>
+<p>From this initial summary, 146,763 unique SNPs were identified by the Stacks pipeline. The mean distance between all autosomal SNPs was calculated to be 21.43kb, however, many of these were within the same locus. Excluding SNPs within the same locus (i.e. &lt;100nt apart), the mean distance between SNPs became 48.63kb.</p>
 <p>Checking the call rate across all samples, 5x1996 samples with SNP call rates &lt; 50% were identified. This value was not exceeded by any samples in the 2010 or 2012 populations. No SNPs were found being unique to Turretfield, which is as expected by the settings given to <code>stacks</code></p>
 <pre class="r"><code>snpSummary %&gt;%
     mutate_at(sampleID$Sample, list(is.na)) %&gt;%
@@ -1692,7 +1710,6 @@ seqResetFilter(gdsFile) </code></pre>
 <li>Missing Data in &lt; 25% of samples</li>
 <li>Correlation of &gt; 40% indicating LD</li>
 </ul>
-<p>This has left 18,836 SNPs as candidates for downstream analysis.</p>
 <pre class="r"><code>keepSNPs &lt;- c(&quot;variant.id&quot;, &quot;position&quot;, &quot;chromosome&quot;) %&gt;%
     sapply(function(x){
         seqGetData(gdsFile, x)

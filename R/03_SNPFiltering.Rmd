@@ -29,6 +29,7 @@ library(scales)
 library(magrittr)
 library(tidyverse)
 theme_set(theme_bw())
+if (interactive()) here::here("R") %>% setwd
 ```
 
 This workflow goes through multiple steps involved in processing the stacks output:
@@ -99,7 +100,27 @@ snpSummary <- tibble(
               t %>%
               set_colnames(sampleID$Sample)) %>%
     as_tibble()
+mnDist <- snpSummary %>% 
+  dplyr::filter(chromosome %in% 1:21) %>% 
+  split(f = .$chromosome) %>% 
+  lapply(function(x){diff(x$position)}) %>% 
+  unlist() %>% 
+  mean() %>% 
+  divide_by(1000) %>% 
+  round(2)
+mnDiffLoc <- snpSummary %>% 
+  dplyr::filter(chromosome %in% 1:21) %>% 
+  split(f = .$chromosome) %>%
+  lapply(function(x){diff(x$position) %>% .[. > 100]}) %>%
+  unlist() %>% 
+  mean() %>% 
+  divide_by(1000) %>% 
+  round(2)
 ```
+
+From this initial summary, `r comma(nrow(snpSummary))` unique SNPs were identified by the Stacks pipeline.
+The mean distance between all autosomal SNPs was calculated to be `r mnDist`kb, however, many of these were within the same locus.
+Excluding SNPs within the same locus (i.e. <100nt apart), the mean distance between SNPs became `r mnDiffLoc`kb.
 
 Checking the call rate across all samples, 5x1996 samples with SNP call rates < 50% were identified. 
 This value was not exceeded by any samples in the 2010 or 2012 populations.
@@ -148,8 +169,6 @@ SNPs were pruned for Linkage Disequilibrium using only samples from the 1996 and
 - Minor Allele Frequency > `r percent(minMaf)`
 - Missing Data in < `r percent(missingRate)` of samples
 - Correlation of > `r percent(minCor)` indicating LD
-
-This has left `r comma(sum(vapply(snpset, length, integer(1))))` SNPs as candidates for downstream analysis.
 
 
 ```{r keepSNPs}
