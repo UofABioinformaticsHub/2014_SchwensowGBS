@@ -141,6 +141,7 @@ genotypes %<>%
 ```
 
 - This additional filtering step restricted analysis to `r comma(nrow(snpIn1996))` SNPs instead of the initial `r comma(nrow(keepSNPs))` SNPs.
+- The mean distance between SNPs in the final dataset was `r genotypes %>% distinct(snpID, .keep_all = TRUE) %>% split(f = .$chromosome) %>% lapply(function(x){diff(x$position)}) %>% unlist() %>% mean() %>% divide_by(1000) %>% round(2)`kb
 
 ```{r closeGDS}
 seqClose(gdsFile)
