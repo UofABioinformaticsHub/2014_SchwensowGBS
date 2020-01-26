@@ -28,6 +28,12 @@ library(tidyverse)
 if (interactive()) setwd(here::here("R"))
 ```
 
+```{r}
+panderOptions("table.split.table", Inf)
+panderOptions("big.mark", ",")
+```
+
+
 All plots from FastQC reports were generated in R using the Bioconductor package [ngsReports](https://bioconductor.org/packages/release/bioc/html/ngsReports.html)
 
 ```{r loadData}
@@ -197,6 +203,23 @@ plotly::ggplotly(
 
 In summary, of the `r comma(sum(readTotals(rawFqc)$Total_Sequences)/2)` initial reads, a total of `r comma(sum(readTotals(deMuxFqc)$Total_Sequences)/2)` were retained after trimming and demultiplexing.
 This represents a combined recovery rate of `r  percent(sum(readTotals(deMuxFqc)$Total_Sequences) / sum(readTotals(rawFqc)$Total_Sequences))` from the initial libraries.
+The average number of reads recovered per sample was `r comma(mean(readTotals(deMuxFqc)$Total_Sequences))`, with all samples being between `r pander(comma(range(readTotals(deMuxFqc)$Total_Sequences)))` reads prior to alignment.
+
+```{r}
+deMuxFqc %>% 
+  readTotals() %>% 
+  mutate(ID = str_remove(Filename, ".[12].fq.gz")) %>% left_join(samples) %>% 
+  distinct(ID, .keep_all = TRUE) %>% 
+  filter(
+    Total_Sequences == max(Total_Sequences) | Total_Sequences == min(Total_Sequences)
+    ) %>%
+  dplyr::select(ID, Barcode, `Total Sequences` = Total_Sequences, Library) %>%
+  pander(
+    justify = "llrl",
+    caption = "The two samples with lowest and highest read recovery rates."
+  )
+```
+
 
 ### Comparison against previous analysis
 
@@ -204,7 +227,7 @@ This demultiplexing strategy was devised after previous unsatisfactory results w
 The revised strategy showed considerable improvement in yield for the libraries `FCC21WPACXX-CHKPEI13070002_L6` and `FCC21WPACXX-CHKPEI13070003_L7` which both contained exculsively 1996 samples.
 As such the revised strategy was chosen.
 
-```{r plotLibComparison, fig.cap="*Comparison of library sizes after demultiplexing using sabre (salmon), vs the original method using process_radtags from the stacks pipelin (blue).*"}
+```{r plotLibComparison, fig.cap="*Comparison of library sizes after demultiplexing using sabre (salmon), vs the original method using process_radtags from the stacks pipeline (blue).*"}
 list(
     origFqc %>%
         readTotals() %>%
