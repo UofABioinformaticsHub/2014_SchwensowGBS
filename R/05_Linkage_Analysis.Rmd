@@ -31,6 +31,7 @@ library(tidyverse)
 library(parallel)
 library(plyranges)
 library(rtracklayer)
+library(ggrepel)
 ```
 
 ```{r setOptions}
@@ -59,7 +60,6 @@ sampleID <- tibble(
   filter(Population != 2010)
 ```
 
-Autosomal SNP IDs for the 1996 and 2012 samples were loaded.
 
 ```{r snps, include=FALSE}
 seqSetFilter(gdsFile, sample.id = sampleID$Sample)
@@ -81,7 +81,8 @@ snps <- tibble(
 seqResetFilter(gdsFile)
 ```
 
-To define the SNPs used for estimation of Linkage Decay, select the 10,000 autosomal SBPs identified in the highest number of idividuals.
+Autosomal SNP IDs for the 1996 and 2012 samples were loaded.
+To then define the SNPs used for estimation of Linkage Decay, select the 10,000 autosomal SNPs identified in the highest number of individuals.
 Here this was set as SNPs identified in >95% of individuals (i.e. > 104).
 For simpler plotting and estimation of decay, only SNPs < 1Mb apart were retained.
 
@@ -198,9 +199,9 @@ allLD %>%
 d <- 4e4
 ```
 
-As the set of SNPs under analysis had been pruned in order to only include one representative SNP in the case of linkage, any SNPs in linkage to the detected SNPs were explored, within `r d/1000`kb.
+As the set of SNPs under analysis had been linkage pruned in order to only include one representative SNP, any SNPs within `r d/1000`kb of the initially analysed SNPs were explored for evidence of linkage.
 As phasing was not possible outside of a given Stacks Locus, correlations between genotypes were used as a proxy for linkage.
-Correlations between were calculated for each timepoint separately as they may not be expected to be the same at each timepoint, given the selctive bottleneck applied by RHDV.
+Correlations between were calculated for each time-point separately *as they may not be expected to be the same at each time point*, given the selective bottleneck applied by RHDV.
 
 ```{r linkageSnpSetup}
 alleleResults <- read_tsv("alleleResults.tsv")
@@ -382,7 +383,7 @@ In this analysis, linkage between each significant SNP and those within `r d/100
 Under no selective pressure, linkage would be expected to gradually decrease over the passage of time through recombination, as seen below, where correlations (as indicated by the blue regression line) are trending towards zero.
 SNPs in strong physical linkage before selective pressure from RHDV tended to remain in strong linkage if within the same locus (~100bp).
 
-```{r plotCors, fig.cap = "*Correlations between pairs of SNPs located within 100kb of the significant SNPs detected in the previous stages. The regression line is shown in blue, with y = x shown in black for reference. SNPs within the same locus are shown in red. Only SNPs identified in >70% of both populations are shown.*"}
+```{r plotCors, fig.height=6, fig.cap = "*Correlations between pairs of SNPs located within 100kb of the significant SNPs detected in the previous stages. The regression line is shown in blue, with y = x shown in black for reference. SNPs within the same locus are shown in red. Only SNPs identified in >70% of both populations are shown.*"}
 labFun <- function(x){1 / x}
 cors %>% 
   mutate(`Same Locus` = Locus1 == Locus2) %>%
@@ -411,13 +412,22 @@ cors %>%
 ```
 
 
-No impact of distance between two SNPs was noted on changes in linkage, however a clear break in linkage was noted for one pair of SNPs
+No impact of distance between two SNPs was noted on changes in linkage, however a clear break in linkage was identified visually for one pair of SNPs.
+It is worth noting that transformations of correlations using Fisher's Z transformation, are not viable here for testing changes in correlation.
+These are sample estimates of a true population parameter, and values at the boundary points (i.e. $\rho = 1$) are very common. 
+These values are unable to be transformed to any value beside $\infty$, and as such statistical tests cannot be performed.
 
-```{r}
+```{r plotLinkageByDistance, fig.height=6, fig.cap = "*Change in linkage between SNP pairs shown by distance. One SNP pair which was found in 100% linkage for the 1996 population appeared to shown near zero linkage in 2012.*"}
 cors %>% 
   ggplot(aes(abs(dist)/1000, diff)) +
   geom_point(aes(alpha = LD2_1996)) +
   geom_smooth(method = "lm") +
+  geom_text(
+    aes(label = label),
+    data = . %>% 
+      dplyr::filter(diff == min(diff)) %>%
+      mutate(label = paste(snp1, snp2, sep = "\n"))
+  ) +
   labs(
     x = "Distance (kb)",
     y = expression(paste(Delta, r^2))
@@ -427,9 +437,9 @@ cors %>%
 One pair of SNPs (2028473_73 & 2028554_103) was noticed as showing a clear break in linkage.
 Manual inspection revealed a further SNP (2028643_21; 13:3054236) showing a very similar decrease in linkage (r^2^) from 1 to 0.1361, at a distance of 74.8kb.
 Several other unlinked SNPs also appeared in this region, however this observation suggests than an ancestral haplotype from 1996 may have been selected against.
-The nearest gene to this region is COP1 (13:3090539-3302219), and the human ortholog (Q8NHY2) is predicted to be located in numerous cellular locations, including the [Golgi Apparatus](https://www.ebi.ac.uk/QuickGO/annotations?geneProductId=Q8NHY2).
+The nearest gene to this region is COP1 (13:3090539-3302219), and the human protein ortholog (Q8NHY2) is predicted to be located in numerous cellular locations, including the [Golgi Apparatus](https://www.ebi.ac.uk/QuickGO/annotations?geneProductId=Q8NHY2).
 
-```{r}
+```{r singlePairTable}
 cors %>% 
   mutate(diff = LD2_2012 - LD2_1996) %>% 
   dplyr::filter(diff == min(diff)) %>%
