@@ -50,6 +50,9 @@ panderOptions("missing", "")
 mc <- min(12, detectCores() - 1)
 alpha <- 0.05
 maxKb <- 40
+```
+
+```{r tidyP}
 tidyP <- function(p, m = 0.001){
   x <- rep("", length(p))
   x[p < m] <- sprintf("%.2e", p[p < m])
@@ -58,18 +61,22 @@ tidyP <- function(p, m = 0.001){
 }
 ```
 
+```{r keepSNPs}
+keepSNPs <- readRDS("keepSNPsAfterLDPruning.RDS")
+```
+
 
 ```{r pdfParams}
 w <- 169/25.4
 h <- 169/25.4
 ```
 
-This workflow immediately follows `03_SNPFiltering` and performs an analysis on the SNPs retained after filtering.
-Analysis performed is:
+This workflow immediately follows `03_SNPFiltering` and performs an analysis on the `r nrow(keepSNPs)` SNPs retained after filtering.
+Analysis performed were:
 
-- Assess the rate of missing values by retained SNP and sample
-- Run a PCA analysis using SNPs & samples to minimise missing values
-- Execute the previous workflow
+- To assess the rate of missing values by retained SNP and sample
+- Run a PCA analysis using SNPs & samples 
+- Analyse using comparisons between genotypes and allele frequencies, as well as using Bayescan and FLK
 
 ```{r loadGDS}
 gdsPath <- file.path("..", "5_stacks", "gds", "populations.snps.gds")
@@ -77,7 +84,6 @@ gdsFile <- seqOpen(gdsPath, readonly = TRUE)
 ```
 
 ```{r loadFilteredSNPs}
-keepSNPs <- readRDS("keepSNPsAfterLDPruning.RDS")
 sampleID <- tibble(
     Sample = seqGetData(gdsFile, "sample.annotation/Sample"),
     Population = seqGetData(gdsFile, "sample.annotation/Population"),
@@ -134,7 +140,7 @@ genotypes %<>%
     right_join(snpIn1996)
 ```
 
-- This additional filtering step restricted analysis to `r comma(nrow(snpIn1996))` SNPs instead of the initial `r comma(nrow(keepSNPs))` SNPs
+- This additional filtering step restricted analysis to `r comma(nrow(snpIn1996))` SNPs instead of the initial `r comma(nrow(keepSNPs))` SNPs.
 
 ```{r closeGDS}
 seqClose(gdsFile)
@@ -151,7 +157,6 @@ ensGenes <- file.path(
 ```
 
 
-The set of SNPs under investigation was also defined as a GRanges object.
 
 ```{r snpsGR}
 snpsGR <- makeGRangesFromDataFrame(
@@ -165,6 +170,7 @@ snpsGR <- makeGRangesFromDataFrame(
 )
 ```
 
+The set of SNPs under investigation was also defined as a GRanges object.
 This was intersected with the set of genes to connect SNPs to genes within `r maxKb` kb.
 
 ```{r snp2Gene}
@@ -176,7 +182,7 @@ snp2Gene <- suppressWarnings(
 )
 ```
 
-A set of SNPs within exonic regions was also defined.
+A set of SNPs within exonic regions was also defined in order to detect any SNPs within coding regions.
 
 ```{r ensExons}
 ensExons <- file.path(
