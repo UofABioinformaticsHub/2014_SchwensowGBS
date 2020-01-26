@@ -28,6 +28,8 @@ library(tidyverse)
 if (interactive()) setwd(here::here("R"))
 ```
 
+All plots from FastQC reports were generated in R using the Bioconductor package [ngsReports](https://bioconductor.org/packages/release/bioc/html/ngsReports.html)
+
 ```{r loadData}
 rawFqc <- list.files("../0_rawData/FastQC/", pattern = "zip", full.names = TRUE) %>%
     FastqcDataList()
@@ -42,13 +44,17 @@ samples <- read_tsv("../0_rawData/samples.tsv")
 
 ## Base Qualities
 
-Each of the libraries was inspected for overall quality.
+Each of the `r length(rawFqc[grepl("_1.fq.gz", fqName(rawFqc))])` paired-end, pooled libraries was inspected for overall quality.
 Positions 3 & 4 from R2 libraries `FCC21WPACXX-CHKPEI13070002_L6` and `FCC21WPACXX-CHKPEI13070003_L7` showed clear problems with read qualities.
 This was likely due to an unsatisfactory nucleotide diversity in the original sequencing run and not enough *phiX* to overcome this, particularly as all R2 reads will begin with the restriction site (i.e. fragments will terminate with this as there is no R2 barcode).
 
 ```{r plotBQRaw, fig.height=12, fig.cap = "*Base qualities before trimming*"}
 plotBaseQuals(rawFqc, plotType = "boxplot")
 ```
+
+Trimming was performed using `Adapter Removal v2.2.1` before de-multiplexing, with adapters automatically identified by `bbmerge` from `BBMap v6.62`.
+Improvements were seen at the 3' end of the reads, but the previously noted issues at the 5' end were not specifically addressed during this step. 
+During adapter removal, any reads <70nt were discarded as a complete pair, a quality trimming threshold of 20 was also used to discard low-quality reads.
 
 ```{r plotBQTrim, fig.height=12, fig.cap = "*Base qualities after trimming*"}
 plotBaseQuals(trimFqc, plotType = "boxplot")
@@ -93,13 +99,16 @@ list(
     )
 ```
 
+Demiltiplexing was performed using `sabre_pe` allowing for one mismatch in the barcode, and including the restriction site into the barcode sequence.
+This demultiplixes based on the R1 reads only, and as such barcodes and restriction sites will be removed from all R1 reads.
+No modification will occur for R2 reads, leading to differing read lengths for each sample (based on different barcode lengths), and for each read within the pair as R2 will be retained as full length.
 
-The first check after demultiplexing is to ensure that read were not assigned to multiple individuals by `sabre pe`, given that one mismatch was permitted per barcode/restriction-site.
+The first check after demultiplexing is to ensure that read were not assigned to multiple individuals, given the permissive nature of this..
 Read Totals before and after demultiplexing were then checked and the recovery rate was >93% for each library, with the clear exception of `FCC21WPACXX-CHKPEI13070002_L6`.
 Manual inspection revealed that a significant majority (~9.3x10^6^ of 13.4x10^6^) of these non-recovered reads contained truncated barcodes with the first two bases missing.
 If an additional recovery step was taken this would increase the recovery rate to 93% for this library, and may yield an additional 5-600,000 reads per sample.
 For the next most poorly recovered library, an additional step may recover an additional 3x10^6^ reads. 
-However, no further action was taken at this point.
+However, as this artefact was difficult to explain from the perspective of library preparation, no further action was taken at this point.
 
 ```{r readTotals}
 trimReadTotals <- readTotals(trimFqc) %>%
@@ -144,9 +153,9 @@ trimReadTotals %>%
 
 ```{r cp}
 cp <- paste("*Read Totals for each of the 1996 & 2012 samples.",
-            "The black line indicates the mean library size,",
+            "The black line indicates the mean library size across all libraries,",
             "whilst the dashed green line indicates the mean library size based",
-            "on the original library before demultiplexing.",
+            "of each individual library before demultiplexing.",
             "Bar colours indicate sample population as 1996 (blue) or 2012 (red).*")
 ```
 
@@ -191,19 +200,20 @@ This represents a combined recovery rate of `r  percent(sum(readTotals(deMuxFqc)
 
 ### Comparison against previous analysis
 
+This demultiplexing strategy was devised after previous unsatisfactory results were obtained using `process_radtags` from the `Stacks` pipeline.
 The revised strategy showed considerable improvement in yield for the libraries `FCC21WPACXX-CHKPEI13070002_L6` and `FCC21WPACXX-CHKPEI13070003_L7` which both contained exculsively 1996 samples.
-As such the revised strategy was pursued further.
+As such the revised strategy was chosen.
 
-```{r plotLibComparison, fig.cap="*Comparison of library sizes after demultiplexing using sabre (blue), vs the original method using stacks (salmon).*"}
+```{r plotLibComparison, fig.cap="*Comparison of library sizes after demultiplexing using sabre (salmon), vs the original method using process_radtags from the stacks pipelin (blue).*"}
 list(
     origFqc %>%
         readTotals() %>%
         mutate(ID = str_remove(Filename, ".Lib..[12].fq"),
-               Type = "Previous"),
+               Type = "stacks"),
     deMuxFqc %>%
         readTotals() %>%
         mutate(ID = str_remove(Filename, ".[12].fq.gz"),
-               Type = "Repeat")
+               Type = "sabre")
 ) %>%
     bind_rows() %>%
     distinct(ID, Type, Total_Sequences) %>%
@@ -216,13 +226,13 @@ list(
     left_join(samples) %>%
     ggplot(aes(Library, Total_Sequences, fill = Type)) +
     geom_boxplot() +
-    labs(y = "Total Reads") +
+    labs(y = "Total Reads per Sample") +
     scale_y_continuous(labels = comma) +
     theme_bw() +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 ```
 
-```{r plotLibComp2, fig.cap="*Changes in library size using the improved recovery strategy. All samples showed an improved rate of recovery.*"}
+```{r plotLibComp2, fig.cap="*Changes in library size using the improved recovery strategy. All samples and all libraries showed an improved rate of recovery.*"}
 list(
     origFqc %>%
         readTotals() %>%
@@ -256,27 +266,21 @@ list(
           legend.position = "none")
 ```
 
-```{r plotLibComp3, fig.cap = "*Comparison of library sizes for the three populations.*"}
-list(
-    origFqc %>%
-        magrittr::extract(!grepl("(ora|gc)", fqName(.))) %>%
-        readTotals(),
-    deMuxFqc %>%
-        magrittr::extract(grepl("1.fq", fqName(.))) %>%
-        readTotals()
-) %>%
-    bind_rows() %>%
-    mutate(Population = case_when(
-        grepl("ora", Filename) ~ 2012,
-        grepl("gc", Filename) ~ 1996,
-        !grepl("(ora|gc)", Filename) ~ 2010
-    ),
-    Population = as.factor(Population)) %>%
-    mutate(ID = str_remove(Filename, ".[12].fq.gz")) %>%
-    ggplot(aes(Population, Total_Sequences, fill = Population)) +
-    geom_boxplot() +
-    scale_y_continuous(labels = comma) +
-    theme_bw()
+```{r plotLibComp3, fig.cap = "*Comparison of library sizes for the two populations.*"}
+deMuxFqc %>%
+  magrittr::extract(grepl("1.fq", fqName(.))) %>%
+  readTotals()%>%
+  mutate(Population = case_when(
+    grepl("ora", Filename) ~ 2012,
+    grepl("gc", Filename) ~ 1996
+  ),
+  Population = as.factor(Population)) %>%
+  mutate(ID = str_remove(Filename, ".[12].fq.gz")) %>%
+  ggplot(aes(Population, Total_Sequences, fill = Population)) +
+  geom_boxplot() +
+  scale_y_continuous(labels = comma) +
+  labs(y = "Total Sequences") +
+  theme_bw()
 ```
 
 
@@ -289,9 +293,10 @@ deMuxFqc %>%
     plotGcContent(plotType = "line", usePlotly = TRUE, theoreticalGC = FALSE)
 ```
 
-Inspection by GC content showed that `gc2709` and `gc2700` appeared to have an exaggerated peak around 60%, whilst all other samples showed a more broad spread across the range.
-From the Turretfield samples (previous analysis), `pt1125` showed an unexpected peak around 50% indicating that sample may contain reads from a different species.
-This sample should be excluded from all further analysis.
+Inspection of GC content showed that `gc2709` and `gc2700` appeared to have an exaggerated peak around 60%, whilst all other samples showed a more broad spread across the range.
+
+From the Turretfield samples, collected for [a previous analysis](https://onlinelibrary.wiley.com/doi/abs/10.1111/mec.14228), `pt1125` showed an unexpected peak around 50% indicating that sample may contain reads from a different species.
+This sample was recommended to be excluded from all further analysis.
 
 ```{r plotGcTF, fig.cap="*GC content for all Turretfield samples.*"}
 origFqc %>%
@@ -316,8 +321,8 @@ plotSeqContent(deMuxFqc, usePlotly = TRUE, dendrogram = TRUE, cluster = TRUE)
 
 ## Conclusion
 
-- The restriction site should be removed from both R2 and Turretfield samples, especially given the high error rate at positions 2/3 in some R2 samples
-- No further processing is required as the presence of the restriction site at both ends means fixed length reads are not required for Stacks
+- The restriction site was subsequently removed from both R2 and Turretfield samples using `fastx_trimmer`, especially given the high error rate at positions 2/3 in some R2 samples
+- No further processing is required as the presence of the restriction site at both ends means fixed length reads are *not required for Stacks*
 
 ## SessionInfo
 
