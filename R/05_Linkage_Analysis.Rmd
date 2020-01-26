@@ -195,11 +195,11 @@ allLD %>%
 ## Analysis of Significant SNPs
 
 ```{r d}
-d <- 1e5
+d <- 4e4
 ```
 
 As the set of SNPs under analysis had been pruned in order to only include one representative SNP in the case of linkage, any SNPs in linkage to the detected SNPs were explored, within `r d/1000`kb.
-As phasing was not possible outside of a given Stack Locus, correlations between genotypes were used as a proxy for linkage.
+As phasing was not possible outside of a given Stacks Locus, correlations between genotypes were used as a proxy for linkage.
 Correlations between were calculated for each timepoint separately as they may not be expected to be the same at each timepoint, given the selctive bottleneck applied by RHDV.
 
 ```{r linkageSnpSetup}
@@ -244,12 +244,12 @@ sigSNPs <- snpsGR %>%
   subset(
     snpID %in% (
       list(
-        allele = alleleResults, 
+        allele = alleleResults,
         genotype = genotypeResults
-      ) %>% 
-        lapply(dplyr::filter, FDR < 0.05) %>% 
-        lapply(extract2, "snpID") %>% 
-        unlist() %>% 
+      ) %>%
+        lapply(dplyr::filter, FDR < 0.05) %>%
+        lapply(extract2, "snpID") %>%
+        unlist() %>%
         unique()
     )
   ) 
@@ -365,15 +365,16 @@ cors <- snpsForCor %>%
     starts_with("LD"),    
     Locus1, Locus2 = `Locus ID`,
     pos1, pos2 = position
-    ) %>%
+  ) %>%
   dplyr::mutate(
-    dist = pos1 - pos2,
+    dist = pos2 - pos1,
     model = case_when(
       snp1 %in% dplyr::filter(alleleResults, FDR < 0.05)$snpID &
         snp1 %in% dplyr::filter(genotypeResults, FDR < 0.05)$snpID ~ "Both",
       snp1 %in% dplyr::filter(alleleResults, FDR < 0.05)$snpID ~ "Allele",
       snp1 %in% dplyr::filter(genotypeResults, FDR < 0.05)$snpID ~ "Genotype" 
-    )
+    ),
+    diff = LD2_2012 - LD2_1996
   )
 ```
 
@@ -389,7 +390,7 @@ cors %>%
     snp1 %in% dplyr::filter(snpN, N_1996 >= 40, N_2012 >= 37)$snpID,
     snp2 %in% dplyr::filter(snpN, N_1996 >= 40, N_2012 >= 37)$snpID    
   ) %>%
-  ggplot(aes(corr1996, corr2012)) +
+  ggplot(aes(corr1996^2, corr2012^2)) +
   geom_point(
     aes(size = 1 / abs(dist), colour = `Same Locus`), 
     alpha = 0.5
@@ -398,181 +399,54 @@ cors %>%
   geom_smooth(method = "lm", se = FALSE) +
   scale_size_continuous(
     labels = labFun, 
-    breaks = c(10^seq(-6, 0)), 
+    breaks = c(1/d, 10^seq(-4, 0)), 
     trans = "sqrt"
   ) + 
   scale_colour_manual(values = c("black", "red")) +
   labs(
-    x = "Correlation (1996)",
-    y = "Correlation (2012)",
+    x = expression(paste(r[1996]^2)),
+    y = expression(paste(r[2012]^2)),
     size = "Distance (bp)"
-  ) +
-  theme(legend.title.align = 0.5)
+  ) 
 ```
 
+
+No impact of distance between two SNPs was noted on changes in linkage, however a clear break in linkage was noted for one pair of SNPs
 
 ```{r}
-sigCors <- cors %>%
-  mutate(
-    z1996 = atanh(corr1996), 
-    z2012 = atanh(corr2012)
-    ) %>% 
-  dplyr::select(
-    starts_with("snp"), 
-    chromosome, pos1, dist, 
-    starts_with("corr"), 
-    starts_with("z")
-    ) %>% 
-  left_join(snpN, by = c("snp1" = "snpID")) %>% 
-  left_join(snpN, by = c("snp2" = "snpID")) %>% 
-  rowwise() %>% 
-  mutate(
-    n1996 = min(N_1996.x, N_1996.y), 
-    n2012 = min(N_2012.x, N_2012.y)
-    ) %>% 
-  dplyr::select(-ends_with("x"), -ends_with("y")) %>% 
-  ungroup() %>% 
-  mutate(
-    Z = (z2012 - z1996) / sqrt(1 / (n1996 - 3) + 1 / (n2012 - 3)), 
-    p = case_when(
-      !is.nan(Z) ~ pnorm(abs(Z), lower.tail = FALSE)*2, 
-      is.nan(Z) ~ 1
-    ),
-    adjP = p.adjust(p, "fdr")
-    ) %>%
-  dplyr::select(-starts_with("z", FALSE))
+cors %>% 
+  ggplot(aes(abs(dist)/1000, diff)) +
+  geom_point(aes(alpha = LD2_1996)) +
+  geom_smooth(method = "lm") +
+  labs(
+    x = "Distance (kb)",
+    y = expression(paste(Delta, r^2))
+  ) 
 ```
 
-Correlations were converted to Z scores using Fisher's transformation and tests for a significant change were conducted.
-P-values were adjusted using the Benjamini-Hochbers False-Discovery Rate, giving `r sum(sigCors$adjP < 0.05)` SNPs with significantly changed correlations.
+One pair of SNPs (2028473_73 & 2028554_103) was noticed as showing a clear break in linkage.
+Manual inspection revealed a further SNP (2028643_21; 13:3054236) showing a very similar decrease in linkage (r^2^) from 1 to 0.1361, at a distance of 74.8kb.
+Several other unlinked SNPs also appeared in this region, however this observation suggests than an ancestral haplotype from 1996 may have been selected against.
+The nearest gene to this region is COP1 (13:3090539-3302219), and the human ortholog (Q8NHY2) is predicted to be located in numerous cellular locations, including the [Golgi Apparatus](https://www.ebi.ac.uk/QuickGO/annotations?geneProductId=Q8NHY2).
 
-```{r sigCorTable}
-sigCors %>% 
-  arrange(p) %>% 
-  dplyr::filter(adjP < 0.05) %>%
-  unite(snps, snp1, snp2, sep = "/") %>%
-  unite(position, chromosome, pos1, sep = ":") %>%
+```{r}
+cors %>% 
+  mutate(diff = LD2_2012 - LD2_1996) %>% 
+  dplyr::filter(diff == min(diff)) %>%
   dplyr::select(
-    snps, position, 
-    distance = dist,
-    corr1996, corr2012,
-    p, adjP
+    Chromosome = chromosome, 
+    Position = pos1,
+    snp1, snp2, 
+    Distance = dist,
+    `r~1996~^2^` = LD2_1996, 
+    `r~2012~^2^` = LD2_2012
   ) %>%
-  arrange(position, distance) %>%
   pander(
-    caption = paste(
-      "*SNPs showing a significant shift in linkage to an FDR of 5%.",
-      "The position given corresponds to the SNP considered as potentially",
-      "impacted by RHDV selection, whilst the the distance refers to the SNP",
-      "where linkage has been potentially impacted by RHDV selection.*"
-    )
+    justify = "lrrrlll",
+    caption = "The one SNP pair noted with a clear change in linkage"
   )
 ```
 
-
-### SNPs Showing A Noticeable Increase in Linkage 
-
-```{r}
-sigIncPair <- cors %>% 
-  dplyr::filter(
-    corr2012 == 1, 
-    corr1996 != 1, 
-    chromosome == "GL018883"
-    ) %>% 
-  dplyr::select(starts_with("snp")) %>%
-  unlist() %>% 
-  as.character()
-```
-
-
-Only one pair of SNPs appeared to increase their genotype correlation to 100% post-RHDV (`r pander(sigIncPair)`), from an initial correlation of `r percent(dplyr::filter(cors, snp1 %in% sigIncPair, snp2 %in% sigIncPair)$corr1996)`.
-These are at a distance of `r dplyr::filter(cors, snp1 %in% sigIncPair, snp2 %in% sigIncPair)$dist`bp away, with the initial snp (`r sigIncPair[[1]]`), being identifed as intronic for the gene *SERPINA6*.
-This putatively linked SNP (`r sigIncPair[[2]]`) is also within the coding region for this gene, however this is also intronic.
-It should be noted however, that no exonic SNPs were detected for this gene in any Locus.
-However, it remains possible that this apparent increase in linkage across a plausible distance may be evidence of selection.
-
-One further SNP pair showed a noticeable increase in linkage (2405359_66/2405410_23), with both of these SNPs being intronic within ENSOCUG00000005835 (*STXBP5L*).
-This SNP showed a signifcant increase in the MAF (1996 - 0.021; 2012 - 0.202) and this relatively low frequency does explain some of the apparent decrease in correlation for the SNP within the same locus (2405359_68).
-
-One SNP pair switched from a negative correlation to a positive correlation, which given the strong shift towards the homozygous genotype for the major allele, may again appear consistent with selection.
-These SNPs are both within 20kb of the gene *RHOQ*, which along with *STXBP5L* has been connected to insulin secretion & the related response.
-No obvious link can be drawn to any insulin-related pathways at this point
-
-### SNPs Showing A Noticeable Decrease in Linkage 
-
-In addition to the above SNPs, four SNPs around 2028473_73 (13:2979383) were detected as having a significant decrease in linkage.
-It may be postulated that this is evidence of diversifying selection, and this may be additionally supported by the observation of an increase in the minor allele frquency at this locus in the post-RHDV population.
-In addition, the lower 2012 correlations upstream of this SNP, compared to the downstream SNPs may indicate selection acting on a region more distal.
-Whilst no genes defined in Ensembl 96 were within 100kb of this SNP, a Genscan predicted transcript (GENSCAN00000009622.1) directly overlapped this gene, and the predicted cDNA shared some similarity with *tenascin R* from *Gorilla gorilla* (11% cover; 92% identity; E = 3e-43).
-
-
-### SNPs Within the Same Locus
-
-```{r sameLocTable}
-dplyr::filter(cors, Locus1 == Locus2) %>% 
-  dplyr::select(chromosome, snp1, snp2, pos1, dist,corr1996, corr2012) %>% 
-  pander(
-    caption = paste(
-      "Correlations between SNPs within the same loci as candidate SNPs detected earlier.*"
-    )
-  )
-```
-
-**NOT FINISHED BEYOND HERE**
-
-```{r}
-knitr::opts_chunk$set(
-  eval = FALSE
-)
-```
-
-
-An addition `r nrow(dplyr::filter(cors, Locus1 == Locus2))` SNPs were found within the same Locus as those detected as significant.
-
-```{r}
-corList <- cors %>%
-  dplyr::filter(
-    Locus1 == Locus2,
-    model != "Genotype"
-    ) %>%
-  dplyr::select(-Locus2) %>%
-  split(f = .$Locus1) 
-```
-
-```{r, include=FALSE}
-x <- corList$`321186`
-ids <- dplyr::filter(snps, snpID %in% unlist(x[c("snp1", "snp2")]))$variant.id 
-seqSetFilter(gdsFile, sample.id = samples, variant.id = ids)
-df <- seqGetData(gdsFile, "genotype") %>%
-  apply(3, function(y){
-    colSums(y) 
-  }) %>%
-  set_colnames(filter(snps, variant.id %in% ids)$snpID) %>%
-  as.data.frame() %>%
-  as_tibble() %>%
-  mutate(Sample = samples) %>%
-  left_join(sampleID) %>%
-  gather(key = "snpID", value = "Genotype", -Sample, -Population, -Location) %>%
-  spread(snpID, Genotype)
-df %>%
-  dplyr::select(-Population, -Location) %>%
-  as.data.frame() %>%
-  column_to_rownames("Sample") %>%
-  as.matrix() %>%
-  t() %>%
-  pheatmap(
-    cluster_rows = FALSE,
-    cluster_cols = FALSE, 
-    breaks = seq(0,2)
-  )
-seqResetFilter(gdsFile)
-```
-
-```{r}
-cors %>%
-  dplyr::filter(Locus1 != Locus2, abs(dist) < 40000) %>%
-  dplyr::arrange(abs(dist))
-```
 
 
 ## Session Info
