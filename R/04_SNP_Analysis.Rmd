@@ -50,6 +50,12 @@ panderOptions("missing", "")
 mc <- min(12, detectCores() - 1)
 alpha <- 0.05
 maxKb <- 40
+tidyP <- function(p, m = 0.001){
+  x <- rep("", length(p))
+  x[p < m] <- sprintf("%.2e", p[p < m])
+  x[p >= m] <- sprintf("%.3f", p[p >= m])
+  x
+}
 ```
 
 
@@ -473,9 +479,9 @@ get_map(zoomLoc, zoom = 15, maptype = "terrain", source = "google", color = "bw"
 ### Removal of SNPs Associated with Collection Region
 
 The structure observed within the 2012 population in the PCA could possibly be explained by recent migration into this region.
-As the samples collected in the outer regions appeared very similar to the 1996 population in the above plots, this would possibly indicate migration a very recent event as the genetic influence of this has not spread through the wider area.
+As the samples collected in the outer regions appeared very similar to the 1996 population in the above plots, this would possibly indicate migration is a very recent event as the genetic influence of this has not spread through the wider area.
 Although this may be due to other factors such as sampling bias, this structure was addressed by identifying SNPs which showed an association with the sub-populations identified by PCA analysis.
-In this way, any candidate SNPs obtained below will be less impacted by this structure, and will be more reflective of the intended variable under study, i.e. selection over time, as opposed to any internal structure of the 2012 population.
+In this way, any candidate SNPs obtained below will be less impacted by this structure, and will be more reflective of the intended variable under study, i.e. selection over time, as opposed to any internal structure of the 2012 population which may indicate migration into the breeding population.
 
 ```{r oraRegions}
 oraRegions <- pca4Plot %>% 
@@ -670,7 +676,7 @@ genotypeResults <- genotypes %>%
   dplyr::select(variant.id, snpID, chromosome, position, everything())
 ```
 
-```{r}
+```{r genoSNPs}
 genoSNPs <- genotypeResults %>%
   dplyr::filter(FDR < alpha) %>%
   .[["snpID"]]
@@ -729,8 +735,13 @@ snpsGR %>%
   ) %>%
   left_join(genotypeResults) %>%
   dplyr::select(-variant.id, FDR) %>%
-  mutate(position = comma(position)) %>%
   arrange(p) %>%
+  mutate(
+    position = comma(position),
+    p = tidyP(p),
+    FDR = tidyP(FDR),
+    adjP = tidyP(adjP)
+    ) %>%
   pander(
     justify = "llrlllrrr",
     style = "rmarkdown",
@@ -746,7 +757,7 @@ snpsGR %>%
 
 Under the full genotype model:
 
-- `r nrow(filter(genotypeResults, adjP < alpha))` genotypes were detected as being significantly associated with the two populations when controlling the FWER at &#945; = `r alpha`
+- `r nrow(filter(genotypeResults, adjP < alpha))` genotypes were detected as being significantly associated with the two populations when controlling the FWER at &#945; = `r alpha` (using the Bonferroni adjustment)
 - `r nrow(filter(genotypeResults, FDR < alpha))` genotypes were detected as being significantly associated with the two populations when controlling the FDR at &#945; = `r alpha`
 - For the most highly ranked SNP (`r genotypeResults$snpID[[1]]`), the minor allele has been completely lost in the 2012 population
 
@@ -774,7 +785,7 @@ convert \
 ```
 
 
-```{r manhattanGenotype_png, fig.cap = "*Figure 3a: Manhattan plot showing results for all SNPs on chromosomes 1:21 for analysis by genotype. The horizontal line indicates the cutoff for an FDR of 5%, with SNPs with an adjusted p-value < 0,05 shown in green*", out.width='80%'}
+```{r manhattanGenotype_png, fig.cap = "*Figure 3a: Manhattan plot showing results for all SNPs on chromosomes 1:21 for analysis by genotype. The horizontal line indicates the cutoff for an FDR of 5%, with SNPs with a Bonferroni-adjusted p-value < 0,05 additionally shown in green*", out.width='80%'}
 knitr::include_graphics(file.path("..", "figures", "FigureS3a.png"))
 ```
 
@@ -923,9 +934,17 @@ snpsGR %>%
   left_join(alleleResults) %>%
   dplyr::select(
     snpID, chromosome, position, starts_with("MAF"),
-    gene_id, Name, dist2Gene, p, FDR, adjP) %>%
-  mutate(position = comma(position)) %>%
+    gene_id, Name, dist2Gene, p, FDR, adjP
+  ) %>%
   arrange(p) %>%
+  mutate(
+    position = comma(position),
+    MAF_1996 = sprintf("%.3f", MAF_1996),
+    MAF_2012 = sprintf("%.3f", MAF_2012),
+    p = tidyP(p),
+    FDR = tidyP(FDR),
+    adjP = tidyP(adjP)
+  ) %>%
   pander(
     justify = "llrrrlllrrr",
     style = "rmarkdown",
@@ -1027,7 +1046,7 @@ write_tsv(alleleResults, "alleleResults.tsv")
 
 ### Analysis Using the FLK model
 
-This was performed separately and no SNPs of specific interest were detected. 
+This was performed separately and no unique SNPs were detected in addition to any detected above. 
 
 ### Export of Data for Bayescan
 
@@ -1120,19 +1139,30 @@ bayRes %>%
     snpID, 
     chromosome = seqnames, position = start_snp, 
     gene_id, Name, dist2Gene, fst, qval) %>%
-  mutate(position = comma(position)) %>%
+  # Replace the one dropped by `join_nearest()`
   bind_rows(
-    tibble(
-      snpID = "4165193_106",
-      chromosome = "GL019119",
-      position = "147630",
-      gene_id = "",
-      Name = "",
-      dist2Gene = "",
-      qval = 0.033857
-    )
+    bayRes %>%
+      dplyr::select(variant.id, qval, fst) %>%
+      dplyr::filter(qval < alpha) %>%
+      left_join(
+        genotypes %>% 
+          distinct(snpID, .keep_all = TRUE) %>% 
+          dplyr::select(variant.id, chromosome, position, snpID)
+      ) %>%
+      mutate(
+        gene_id = "",
+        Name = "",
+        dist2Gene = ""
+      ) %>%
+      dplyr::select(-variant.id)
   ) %>%
+  distinct(snpID, .keep_all = TRUE) %>%
+  mutate(position = comma(position)) %>%
   arrange(qval) %>%
+  mutate(
+    fst = tidyP(fst),
+    qval = tidyP(qval)
+  ) %>%
   pander(
     justify = "llrllrrr",
     style = "rmarkdown",
@@ -1347,20 +1377,24 @@ goRes <- bm %>%
 ```{r}
 goRes %>%
   dplyr::filter(FDR == min(FDR), nSig > 1) %>%
-  mutate(Term = Term(go_id),
-         Genes  = vapply(go_id, function(x){
-           subset(sigSnpGR, gene_id %in% I(
-             dplyr::filter(bm, go_id == x) %>%
-               .[["gene_id"]]))$Name %>%
-             sort() %>%
-             unique() %>%
-             paste(collapse = ", ")
-         }, character(1))) %>%
+  mutate(
+    Term = Term(go_id),
+    Genes  = vapply(go_id, function(x){
+      subset(sigSnpGR, gene_id %in% I(
+        dplyr::filter(bm, go_id == x) %>%
+          .[["gene_id"]]))$Name %>%
+        sort() %>%
+        unique() %>%
+        paste(collapse = ", ")
+    }, character(1))
+  ) %>%
   dplyr::select(ID = go_id, Ontology = ontology, Term, Total = N, Sig = nSig, Expected, p, FDR, Genes) %>%
-  mutate(ID = gsub(":", "\\\\:", ID),
-         Expected = round(Expected, 3),
-         p = round(p, 4),
-         FDR = round(FDR, 3)) %>%
+  mutate(
+    ID = gsub(":", "\\\\:", ID),
+    Expected = tidyP(Expected),
+    p = tidyP(p),
+    FDR = round(FDR, 3)
+  ) %>%
   distinct(Ontology, Genes, .keep_all = TRUE) %>%
   pander(
     split.tables = Inf, style = "rmarkdown", 
@@ -1397,7 +1431,7 @@ tfGR <- url("https://raw.githubusercontent.com/hdetering/orycun/master/results/f
 
 Of the `r comma(length(tfGR))` unique SNPs contained in the previous dataset, only `r tfGR %>% find_overlaps(allSnpsGR) %>% reduce() %>% length() %>% comma()` were also identified in the current dataset.
 A meta-analysis was performed on these SNPs using the results from both separate analyses which used Fisher's Exact Test on genotypes.
-In this approach, Fisher's method was used to combine p-values, and resultant p-values were drawn from a $chi^2$ distribution with 4 degrees of freedom (i.e. $2k$).
+In this approach, Fisher's method was used to combine p-values, and resultant p-values were drawn from a $\chi^2$ distribution with 4 degrees of freedom (i.e. $2k$).
 
 ```{r combinedResults}
 combinedResults <- tfGR %>%
@@ -1423,12 +1457,21 @@ Using Bonferroni's adjustment to control the FWER at 0.05 gave `r nrow(filter(co
 ```{r}
 combinedResults %>%
   dplyr::filter(FDR < 0.05) %>%
-  dplyr::select(snpID,
-                Chromosome = chromosome, 
-                Position = position,
-                p, adjP, FDR) %>%
-  pander(justify = "lrrrrr",
-         caption = "*Significant SNPs from the meta-analysis using the previous published results from a separate population.*")
+  dplyr::select(
+    snpID,
+    Chromosome = chromosome, 
+    Position = position,
+    p, adjP, FDR
+  ) %>%
+  mutate(
+    p = tidyP(p),
+    adjP = tidyP(adjP),
+    FDR = tidyP(FDR)
+  ) %>%
+  pander(
+    justify = "lrrrrr",
+    caption = "*Significant SNPs from the meta-analysis using the previous published results from a separate population, using an FDR < 0.05 as the sole criterion for significance.*"
+    )
 ```
 
 
@@ -1437,19 +1480,24 @@ allSnpsGR %>%
   subset(snpID %in% dplyr::filter(combinedResults, FDR < 0.05)$snpID) %>%
   subset(!is.na(Name)) %>% 
   as.data.frame() %>%
-  dplyr::select(snpID, 
-                Chromosome = seqnames,
-                BP = start, 
-                ID = gene_id,
-                Name,
-                Description = description) %>%
+  dplyr::select(
+    snpID, 
+    Chromosome = seqnames,
+    BP = start, 
+    ID = gene_id,
+    Name,
+    Description = description
+  ) %>%
   mutate(Description = str_remove(Description, " \\[Source.+")) %>%
-  pander(style = "rmarkdown", split.table = Inf, justify = "lrrlll",
-         caption = paste0(
-           "*Genes within ", maxKb, "kb of SNPs identified in the meta-analysis.*"))
+  pander(
+    style = "rmarkdown", split.table = Inf, justify = "lrrlll",
+    caption = paste0(
+      "*Genes within ", maxKb, "kb of SNPs identified in the meta-analysis.*"
+    )
+  )
 ```
 
-```{r, fig.cap="*Comparison of p-values for SNPs detected in both analyses, with thos considered as significant after meta-analysis shown in red.*"}
+```{r, fig.cap="*Comparison of p-values for SNPs detected in both analyses, with those considered as significant after meta-analysis shown in red.*"}
 combinedResults %>%
   mutate(Sig = FDR < 0.05) %>%
   ggplot(aes(-log10(geno.p), -log10(tf.p), colour = Sig)) +
