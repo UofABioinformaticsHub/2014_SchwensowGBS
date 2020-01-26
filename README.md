@@ -1,5 +1,7 @@
 # Comparison of 1996 and 2012 Rabbit Populations
 
+This is best viewed using the [github pages site](https://uofabioinformaticshub.github.io/2014_SchwensowGBS/)
+
 ## Description
 
 This is the repository for all code used in the analysis of the GBS dataset used in the comparison between rabbits from the 1996 (n = 55) and 2012 (n = 53) populations from the Gum Creek / Oraparrina region of South Australia.
