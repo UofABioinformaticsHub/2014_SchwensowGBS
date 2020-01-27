@@ -1046,7 +1046,7 @@ alleleResults %>%
   ) + 
   facet_wrap(~snpID, drop = FALSE, ncol = 7) + 
   scale_fill_manual(values = c("black", "blue")) +
-  labs(y = "Count") + 
+  labs(y = "Frequency") + 
   theme(
     legend.direction = "horizontal", 
     legend.position = c(0.75, 0.05)
