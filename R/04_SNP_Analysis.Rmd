@@ -1194,7 +1194,11 @@ list(
     .[["variant.id"]],
   Bayescan = dplyr::filter(bayRes, qval < 0.05)$variant.id
 ) %>% 
- VennDiagram::venn.diagram(filename = NULL) %>%
+ VennDiagram::venn.diagram(
+   filename = NULL,
+   cex = 2,
+   cat.cex = 2
+   ) %>%
   grid.draw()
 ```
 
