@@ -816,11 +816,19 @@ genotypeResults %>%
     ),
     snpID = factor(snpID, levels = unique(snpID))
   ) %>%
-  ggplot(aes(Genotype, fill = Population)) + 
-  geom_bar(position = position_dodge2(preserve = "single")) + 
+  group_by(snpID, Population, Genotype) %>% 
+  tally() %>%
+  ungroup() %>% 
+  group_by(snpID, Population) %>%
+  mutate(freq = n / sum(n)) %>%
+  ggplot(aes(Genotype, freq, fill = Population)) + 
+  geom_bar(
+    stat = "identity",
+    position = position_dodge2(preserve = "single")
+  ) + 
   facet_wrap(~snpID, drop = FALSE, ncol = 7) + 
   scale_fill_manual(values = c("black", "blue")) +
-  labs(y = "Count") + 
+  labs(y = "Frequency") + 
   theme(
     legend.direction = "horizontal", 
     legend.position = c(0.75, 0.05)
