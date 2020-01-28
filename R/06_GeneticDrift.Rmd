@@ -123,7 +123,7 @@ y_0 <- sigma %>%
 ```
 
 
-```{r plotAddVars, echo=FALSE, fig.height=5, fig.cap="The effect of adding variability to derive initial frequencies in neighbouring populations. Half of the simulated initial values will be contained by the box for each starting frequency, with the remaining half being outside of these bounds."}
+```{r plotAddVars, fig.height=5, fig.cap="The effect of adding variability to derive initial frequencies in neighbouring populations. Half of the simulated initial values will be contained by the box for each starting frequency, with the remaining half being outside of these bounds."}
 expand.grid(f0 = f0, sigma = sigma) %>%
   apply(
       MARGIN = 1,
@@ -152,7 +152,7 @@ expand.grid(f0 = f0, sigma = sigma) %>%
 In order to express these values for *&sigma;* in terms of correlations, `r comma(nSamp)` random values were simulated for a starting frequency (*f~0~*) anywhere between 0.5 and 0.95.
 `r comma(nSamp)` _neighbouring population starting values_ were randomly sampled around this using the values of *&sigma;* = `r pander(sigma)`, with the random sampling taking place on the logit scale.
 
-```{r, echo=FALSE, results='asis'}
+```{r, results='asis'}
 tibble(
     Sigma = sigma,
     Correlation = vapply(y_0, cor, y = x_0, numeric(1))
@@ -202,7 +202,7 @@ write_rds(allSim, "allSim_Oct2019.rds")
 
 As expected the mean allele frequency after simulation of drift remained approximately equal to the initial starting frequency, however the variability of the final frequency was heavily affected by the number of neighbouring populations and their similarity to the to main population of interest.
 
-```{r simValues, echo=FALSE, fig.cap="Mean and standard devation of allele frequencies ($f_t$) after simulating drift. Polynomial lines of best fit are shown for each value.", fig.height=6}
+```{r simValues, fig.cap="Mean and standard devation of allele frequencies ($f_t$) after simulating drift. Polynomial lines of best fit are shown for each value.", fig.height=6}
 bind_rows(allParam) %>% 
     mutate(
         n_t = vapply(allSim, mean, numeric(1)),
@@ -260,7 +260,7 @@ driftIntervals <- allParam %>%
   cbind(allSim99)
 ```
 
-```{r driftBands, echo=FALSE, fig.cap=paste("Expected", percent(1-alpha), "intervals for individual allele frequencies under each set of criteria used in generation of simulations."), fig.height=6}
+```{r driftBands,fig.cap=paste("Expected", percent(1-alpha), "intervals for individual allele frequencies under each set of criteria used in generation of simulations."), fig.height=6}
 driftIntervals %>%
   mutate(
       n = as.factor(n),
@@ -328,7 +328,7 @@ cp <- paste(
 ```
 
 
-```{r exportFig4, echo=FALSE}
+```{r exportFig4}
 pdf(file.path("..", "figures", "Figure4.pdf"), width = w, height = 0.8*h)
 alleleResults %>%
     mutate(
