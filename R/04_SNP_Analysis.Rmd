@@ -1639,6 +1639,53 @@ combinedGoRes %>%
   )
 ```
 
+## Export All Tested SNPs
+
+```{r exportAll}
+snpsGR %>%
+    resize(width = 1000*maxKb*2, fix = "center") %>%
+    trim() %>%
+    find_overlaps(ensGenes) %>%
+    as.data.frame() %>%
+    as_tibble() %>%
+    left_join(snps, by = c("variant.id", "snpID", "Col")) %>%
+    dplyr::select(snpID, gene_id, Name, chromosome, position) %>%
+    left_join(
+        as.data.frame(ensGenes), by = c("gene_id", "Name")
+    ) %>%
+    mutate(
+        distance = case_when(
+            position < start ~ comma(start - position, accuracy = 1),
+            position > end ~ comma(position - end, accuracy = 1),
+            snpID %in% ensExons$snpID ~ "Exonic",
+            position >= start & position <= end ~ "Intronic"
+        ),
+        model = ifelse(
+            snpID %in% filter(alleleResults, FDR < alpha)$snpID, "A", ""
+        ),
+        model = ifelse(
+            snpID %in% dplyr::filter(snps, variant.id %in% dplyr::filter(bayRes, qval < 0.05)$variant.id)$snpID,
+            paste0(model, "B"), model
+        ),
+        model = ifelse(
+            snpID %in% filter(genotypeResults, FDR < alpha)$snpID,
+            paste0(model, "G"), model
+        ),
+        width = comma(width, accuracy = 1)
+    ) %>%
+    unite(location, chromosome, position, sep = ":") %>%
+    dplyr::select(
+        snpID, location, gene_id, Name, distance
+    ) %>%
+    left_join(
+        genotypeResults %>% dplyr::select(snpID, genotype_p = p)
+    ) %>%
+    left_join(
+        alleleResults %>% dplyr::select(snpID, allele_p = p)
+    ) %>%
+    write_tsv(here::here("R", "allTestedSnps.tsv"))
+```
+
 
 ## Session Information
 
