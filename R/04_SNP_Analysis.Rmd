@@ -1686,6 +1686,7 @@ snpsGR %>%
     write_tsv(here::here("R", "allTestedSnps.tsv"))
 ```
 
+All tested SNPs, along with genes within `r maxKb`kb and p-values was then exported, and can be downloaded from [here](./allTestedSnps.tsv)
 
 ## Session Information
 
